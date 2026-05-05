@@ -102,7 +102,8 @@ Ticker | Company | Score | Signal | Key Reason | Earnings Warning
 - 🟢 BUY
 - 👀 WATCH CAREFULLY
 - 🟡 HOLD
-- 🔴 SELL
+- 🔴 REDUCE
+- 🚨 EXIT
 - ⚠️ appended when earnings are within 7 days
 - 🔻 appended when negative sentiment detected
 
@@ -190,12 +191,13 @@ Each group produces an internal sub-score of 0–10, multiplied by its weight, s
 
 ### Signal Thresholds (adjustable in Settings)
 
-| Score | Signal |
-|-------|--------|
-| 75–100 | 🟢 BUY |
-| 55–74 | 👀 WATCH CAREFULLY |
-| 35–54 | 🟡 HOLD |
-| 0–34 | 🔴 SELL |
+| Score | Signal | Meaning |
+|-------|--------|---------|
+| 75–100 | 🟢 BUY | Strong alignment across indicators — consider entering |
+| 55–74 | 👀 WATCH CAREFULLY | Promising but not fully confirmed — monitor closely |
+| 35–54 | 🟡 HOLD | Mixed signals — stay the course, no clear edge either way |
+| 25–34 | 🔴 REDUCE | Signals weakening — consider trimming position |
+| 0–24 | 🚨 EXIT | Significant deterioration — consider full exit |
 
 ### Event Modifiers
 Applied to the signal display label only — the numeric score is never modified, keeping TA clean:
@@ -237,7 +239,7 @@ Nothing else in the app changes. pandas-ta provides the underlying calculations 
 | ticker | text | |
 | scanned_at | timestamptz | |
 | score | float | 0–100 |
-| signal | text | BUY / WATCH CAREFULLY / HOLD / SELL |
+| signal | text | BUY / WATCH CAREFULLY / HOLD / REDUCE / EXIT |
 | reasoning | text | plain-English explanation |
 | indicator_detail | jsonb | sub-scores per indicator |
 | earnings_warning | bool | |
