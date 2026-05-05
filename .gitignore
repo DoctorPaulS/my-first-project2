@@ -6,3 +6,19 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+
+# .env variants
+.env.*
+!.env.example
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Additional bytecode
+*.pyo
+*.pyd
