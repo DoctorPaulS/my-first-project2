@@ -4,7 +4,7 @@ from datetime import date
 from typing import Optional
 
 
-def fetch_ohlcv(ticker: str, period: str = "6mo") -> pd.DataFrame:
+def fetch_ohlcv(ticker: str, period: str = "1y") -> pd.DataFrame:
     """Download adjusted OHLCV data for one ticker via yfinance."""
     df = yf.download(ticker, period=period, auto_adjust=True, progress=False)
     if df.empty:
@@ -15,7 +15,7 @@ def fetch_ohlcv(ticker: str, period: str = "6mo") -> pd.DataFrame:
     return df[["Open", "High", "Low", "Close", "Volume"]].copy()
 
 
-def fetch_ohlcv_batch(tickers: list[str], period: str = "6mo") -> dict[str, pd.DataFrame]:
+def fetch_ohlcv_batch(tickers: list[str], period: str = "1y") -> dict[str, pd.DataFrame]:
     """Download OHLCV for multiple tickers at once (much faster than one-by-one)."""
     raw = yf.download(
         tickers, period=period, auto_adjust=True,

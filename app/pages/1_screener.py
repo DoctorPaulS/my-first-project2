@@ -135,7 +135,7 @@ if event.selection.rows:
 
     st.markdown("**Price Chart (6 months):**")
     try:
-        ohlcv = fetch_ohlcv(ticker)
+        ohlcv = fetch_ohlcv(ticker, period="6mo")
         fig = go.Figure(data=[
             go.Candlestick(
                 x=ohlcv.index,
