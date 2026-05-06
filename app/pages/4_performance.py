@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
-from alpaca_client import get_portfolio_history, get_account
+from alpaca_client import get_portfolio_history
 
 st.set_page_config(page_title="Performance", page_icon="📊", layout="wide")
 st.title("📊 Performance")
@@ -25,8 +25,13 @@ yf_period = yf_period_map[period]
 
 @st.cache_data(ttl=3600)
 def load_benchmarks(yf_period: str):
-    spy = yf.download("SPY", period=yf_period, auto_adjust=True, progress=False)["Close"]
-    vti = yf.download("VTI", period=yf_period, auto_adjust=True, progress=False)["Close"]
+    try:
+        spy = yf.download("SPY", period=yf_period, auto_adjust=True, progress=False)["Close"].squeeze()
+        vti = yf.download("VTI", period=yf_period, auto_adjust=True, progress=False)["Close"].squeeze()
+    except Exception as e:
+        st.warning(f"Could not load benchmark data: {e}")
+        spy = pd.Series(dtype=float)
+        vti = pd.Series(dtype=float)
     return spy, vti
 
 
@@ -47,11 +52,12 @@ if error:
 
 fig = go.Figure()
 
-if portfolio_history and portfolio_history["equity"]:
+if portfolio_history and len(portfolio_history.get("equity") or []) > 0:
     port_ts = pd.to_datetime(portfolio_history["timestamps"], unit="s")
     port_equity = pd.Series(portfolio_history["equity"], index=port_ts)
-    port_norm = port_equity / port_equity.iloc[0] * 100
-    fig.add_trace(go.Scatter(x=port_norm.index, y=port_norm, name="My Portfolio", line=dict(color="#00D4AA", width=2)))
+    if port_equity.iloc[0] > 0:
+        port_norm = port_equity / port_equity.iloc[0] * 100
+        fig.add_trace(go.Scatter(x=port_norm.index, y=port_norm, name="My Portfolio", line=dict(color="#00D4AA", width=2)))
 
 if not spy.empty:
     spy_norm = spy / spy.iloc[0] * 100
@@ -72,7 +78,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 def calc_stats(series: pd.Series) -> dict:
     if series is None or len(series) < 2:
-        return {"Total Return": "—", "Max Drawdown": "—", "Volatility": "—"}
+        return {"Total Return": "—", "Max Drawdown": "—", "Volatility (ann.)": "—"}
     ret = (series.iloc[-1] / series.iloc[0]) - 1
     daily_ret = series.pct_change().dropna()
     roll_max = series.cummax()
@@ -86,7 +92,7 @@ def calc_stats(series: pd.Series) -> dict:
 
 
 port_series = None
-if portfolio_history and portfolio_history["equity"]:
+if portfolio_history and len(portfolio_history.get("equity") or []) > 0:
     port_series = pd.Series(portfolio_history["equity"])
 
 stats = {
