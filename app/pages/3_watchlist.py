@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, time, timezone
+from zoneinfo import ZoneInfo
 from db.client import get_db
 from scanner.data_fetcher import fetch_ohlcv
-from scorer import compute_score, format_signal
+from scorer import compute_score
 from config import MAX_WATCHLIST_SIZE, SIGNAL_EMOJI
 
 st.set_page_config(page_title="Watchlist", page_icon="👀", layout="wide")
@@ -13,9 +14,7 @@ db = get_db()
 
 
 def _is_market_hours() -> bool:
-    now_et = datetime.now(timezone.utc).astimezone(
-        __import__("zoneinfo").ZoneInfo("America/New_York")
-    )
+    now_et = datetime.now(timezone.utc).astimezone(ZoneInfo("America/New_York"))
     market_open = time(9, 30)
     market_close = time(16, 0)
     return (
@@ -29,6 +28,7 @@ def load_watchlist():
     return result.data
 
 
+@st.cache_data(ttl=60)
 def score_watchlist(tickers: list[str]) -> dict:
     scores = {}
     for ticker in tickers:
@@ -91,7 +91,7 @@ for item in watchlist:
         "Ticker": ticker + alert_badge,
         "Score": s.get("score", "—"),
         "Signal": f"{emoji} {signal}",
-        "Reason": str(s.get("reasoning", ""))[:100] + "...",
+        "Reason": (lambda r: r[:100] + "..." if len(r) > 100 else r)(str(s.get("reasoning", ""))),
     })
 
 df = pd.DataFrame(rows)
