@@ -46,3 +46,20 @@ def test_rsi_downtrend_lower_score(downtrend_ohlcv):
     indicator = RSIIndicator()
     score_down, _ = indicator.score(downtrend_ohlcv)
     assert score_down <= 5.0
+
+
+from scanner.indicators.volume import OBVIndicator, RelativeVolumeIndicator
+
+
+def test_obv_returns_valid_score(uptrend_ohlcv):
+    indicator = OBVIndicator()
+    score, reasoning = indicator.score(uptrend_ohlcv)
+    assert 0.0 <= score <= 10.0
+    assert isinstance(reasoning, str)
+
+
+def test_relative_volume_returns_valid_score(uptrend_ohlcv):
+    indicator = RelativeVolumeIndicator()
+    score, reasoning = indicator.score(uptrend_ohlcv)
+    assert 0.0 <= score <= 10.0
+    assert "volume" in reasoning.lower()
