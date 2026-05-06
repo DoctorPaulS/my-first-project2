@@ -40,8 +40,17 @@ def load_latest_scan() -> pd.DataFrame:
 
 
 from config import get_secret
+from supabase import create_client
 _url = get_secret("SUPABASE_URL")
+_key = get_secret("SUPABASE_KEY")
 st.write(f"DEBUG URL: `{_url}`")
+st.write(f"DEBUG key length: {len(_key)}, starts: `{_key[:12]}...`")
+try:
+    _c = create_client(_url, _key)
+    _r = _c.table("scan_results").select("scanned_at").limit(1).execute()
+    st.write(f"DEBUG direct test OK: {_r.data}")
+except Exception as _e:
+    st.error(f"DEBUG direct test error: {_e}")
 
 try:
     df = load_latest_scan()
