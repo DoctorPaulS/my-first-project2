@@ -39,7 +39,11 @@ def load_latest_scan() -> pd.DataFrame:
     return df
 
 
-df = load_latest_scan()
+try:
+    df = load_latest_scan()
+except Exception as e:
+    st.error(f"Database error: {e}")
+    st.stop()
 
 if df.empty:
     st.warning("No scan results yet. The scanner runs every 2 hours during market hours.")
