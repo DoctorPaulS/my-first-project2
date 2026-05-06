@@ -63,3 +63,20 @@ def test_relative_volume_returns_valid_score(uptrend_ohlcv):
     score, reasoning = indicator.score(uptrend_ohlcv)
     assert 0.0 <= score <= 10.0
     assert "volume" in reasoning.lower()
+
+
+from scanner.indicators.volatility import BollingerBandsIndicator, ATRIndicator
+
+
+def test_bollinger_returns_valid_score(uptrend_ohlcv):
+    indicator = BollingerBandsIndicator()
+    score, reasoning = indicator.score(uptrend_ohlcv)
+    assert 0.0 <= score <= 10.0
+    assert isinstance(reasoning, str)
+
+
+def test_atr_returns_valid_score(uptrend_ohlcv):
+    indicator = ATRIndicator()
+    score, reasoning = indicator.score(uptrend_ohlcv)
+    assert 0.0 <= score <= 10.0
+    assert "ATR" in reasoning
