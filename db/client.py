@@ -1,9 +1,7 @@
-from functools import lru_cache
 from supabase import create_client, Client
 from config import get_secret
 
 
-@lru_cache(maxsize=1)
 def get_db() -> Client:
     url = get_secret("SUPABASE_URL")
     key = get_secret("SUPABASE_KEY")
