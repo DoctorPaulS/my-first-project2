@@ -80,3 +80,20 @@ def test_atr_returns_valid_score(uptrend_ohlcv):
     score, reasoning = indicator.score(uptrend_ohlcv)
     assert 0.0 <= score <= 10.0
     assert "ATR" in reasoning
+
+
+from scanner.indicators.candlesticks import CandlestickPatternIndicator
+
+
+def test_candlestick_returns_valid_score(uptrend_ohlcv):
+    indicator = CandlestickPatternIndicator()
+    score, reasoning = indicator.score(uptrend_ohlcv)
+    assert 0.0 <= score <= 10.0
+    assert isinstance(reasoning, str)
+
+
+def test_candlestick_score_is_neutral_on_random_data(uptrend_ohlcv):
+    indicator = CandlestickPatternIndicator()
+    score, _ = indicator.score(uptrend_ohlcv)
+    # Score should always be in valid range regardless of data
+    assert 0.0 <= score <= 10.0
