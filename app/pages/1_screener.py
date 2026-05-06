@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime
 from db.client import get_db
-from scorer import compute_score, format_signal
-from scanner.data_fetcher import fetch_ohlcv, fetch_earnings_date
-from config import SIGNAL_EMOJI
+from scorer import format_signal
+from scanner.data_fetcher import fetch_ohlcv
 
 st.set_page_config(page_title="Screener", page_icon="🔍", layout="wide")
 st.title("🔍 Stock Screener")
@@ -69,7 +67,7 @@ display_df = filtered[display_cols].rename(columns={
     "score": "Score",
     "display_signal": "Signal",
     "reasoning": "Reason",
-})
+}).copy()
 display_df["Reason"] = display_df["Reason"].str[:120] + "..."
 
 st.subheader(f"{len(filtered)} stocks match your filters")
@@ -118,7 +116,7 @@ if event.selection.rows:
     st.markdown("**Full Reasoning:**")
     st.write(row["reasoning"])
 
-    if row["indicator_detail"]:
+    if isinstance(row["indicator_detail"], dict) and row["indicator_detail"]:
         st.markdown("**Indicator Breakdown:**")
         detail = row["indicator_detail"]
         detail_df = pd.DataFrame([
