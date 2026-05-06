@@ -39,6 +39,10 @@ def load_latest_scan() -> pd.DataFrame:
     return df
 
 
+from config import get_secret
+_url = get_secret("SUPABASE_URL")
+st.write(f"DEBUG URL: `{_url}`")
+
 try:
     df = load_latest_scan()
 except Exception as e:
