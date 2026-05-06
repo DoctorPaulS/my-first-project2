@@ -1,0 +1,35 @@
+name: S&P 500 Scan
+
+on:
+  schedule:
+    # Every 2 hours: 9:30am, 11:30am, 1:30pm, 3:30pm ET (EDT = UTC-4)
+    # UTC times: 13:30, 15:30, 17:30, 19:30
+    - cron: "30 13,15,17,19 * * 1-5"
+  workflow_dispatch:  # Allow manual runs from GitHub Actions UI
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scan
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          ALPACA_PAPER: "false"
+        run: python -m scanner.run_scan
