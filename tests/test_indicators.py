@@ -23,3 +23,26 @@ def test_adx_returns_valid_score(uptrend_ohlcv):
     score, reasoning = indicator.score(uptrend_ohlcv)
     assert 0.0 <= score <= 10.0
     assert isinstance(reasoning, str)
+
+
+from scanner.indicators.momentum import MACDIndicator, RSIIndicator
+
+
+def test_macd_returns_valid_score(uptrend_ohlcv):
+    indicator = MACDIndicator()
+    score, reasoning = indicator.score(uptrend_ohlcv)
+    assert 0.0 <= score <= 10.0
+    assert isinstance(reasoning, str)
+
+
+def test_rsi_uptrend_not_oversold(uptrend_ohlcv):
+    indicator = RSIIndicator()
+    score, reasoning = indicator.score(uptrend_ohlcv)
+    assert 0.0 <= score <= 10.0
+    assert "RSI" in reasoning
+
+
+def test_rsi_downtrend_lower_score(downtrend_ohlcv):
+    indicator = RSIIndicator()
+    score_down, _ = indicator.score(downtrend_ohlcv)
+    assert score_down <= 5.0
