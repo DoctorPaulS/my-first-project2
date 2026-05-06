@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from db.client import get_db
 from alpaca_client import get_positions, get_account
-from config import PORTFOLIO_CACHE_SECONDS
+from config import PORTFOLIO_CACHE_SECONDS, SIGNAL_EMOJI
 
 st.set_page_config(page_title="Portfolio", page_icon="💼", layout="wide")
 st.title("💼 Portfolio")
@@ -60,7 +60,6 @@ for row in signals_result.data:
 rows = []
 for p in positions:
     sig_data = signal_map.get(p["symbol"], {})
-    from config import SIGNAL_EMOJI
     signal = sig_data.get("signal", "—")
     emoji = SIGNAL_EMOJI.get(signal, "")
     pl_pct = p["unrealized_plpc"] * 100
