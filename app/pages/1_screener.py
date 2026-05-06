@@ -1,17 +1,21 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from db.client import get_db
+from supabase import create_client
+from config import get_secret, MAX_WATCHLIST_SIZE
 from scorer import format_signal
 from scanner.data_fetcher import fetch_ohlcv
 
 st.set_page_config(page_title="Screener", page_icon="🔍", layout="wide")
 st.title("🔍 Stock Screener")
 
+_url = get_secret("SUPABASE_URL")
+_key = get_secret("SUPABASE_KEY")
+
 
 @st.cache_data(ttl=300)
-def load_latest_scan() -> pd.DataFrame:
-    db = get_db()
+def load_latest_scan(url: str, key: str) -> pd.DataFrame:
+    db = create_client(url, key)
     latest = (
         db.table("scan_results")
         .select("scanned_at")
@@ -39,21 +43,8 @@ def load_latest_scan() -> pd.DataFrame:
     return df
 
 
-from config import get_secret
-from supabase import create_client
-_url = get_secret("SUPABASE_URL")
-_key = get_secret("SUPABASE_KEY")
-st.write(f"DEBUG URL: `{_url}`")
-st.write(f"DEBUG key length: {len(_key)}, starts: `{_key[:12]}...`")
 try:
-    _c = create_client(_url, _key)
-    _r = _c.table("scan_results").select("scanned_at").limit(1).execute()
-    st.write(f"DEBUG direct test OK: {_r.data}")
-except Exception as _e:
-    st.error(f"DEBUG direct test error: {_e}")
-
-try:
-    df = load_latest_scan()
+    df = load_latest_scan(_url, _key)
 except Exception as e:
     st.error(f"Database error: {e}")
     st.stop()
@@ -107,16 +98,16 @@ if event.selection.rows:
     with col_title:
         st.subheader(f"Analysis: {ticker}")
     with col_btn:
-        watchlist_result = get_db().table("watchlist").select("ticker").eq("ticker", ticker).execute()
+        _db = create_client(_url, _key)
+        watchlist_result = _db.table("watchlist").select("ticker").eq("ticker", ticker).execute()
         on_watchlist = bool(watchlist_result.data)
         if not on_watchlist:
             if st.button("➕ Add to Watchlist"):
-                from config import MAX_WATCHLIST_SIZE
-                count = get_db().table("watchlist").select("id", count="exact").execute()
+                count = _db.table("watchlist").select("id", count="exact").execute()
                 if count.count >= MAX_WATCHLIST_SIZE:
                     st.error(f"Watchlist is full ({MAX_WATCHLIST_SIZE} stocks max).")
                 else:
-                    get_db().table("watchlist").insert({"ticker": ticker}).execute()
+                    _db.table("watchlist").insert({"ticker": ticker}).execute()
                     st.success(f"{ticker} added to watchlist!")
                     st.rerun()
         else:
