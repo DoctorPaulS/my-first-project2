@@ -1,12 +1,16 @@
 import streamlit as st
-from db.client import get_db, get_settings, save_settings
+from db.client import get_settings, save_settings
 from config import DEFAULT_THRESHOLDS, DEFAULT_GROUP_WEIGHTS, MAX_WATCHLIST_SIZE
+# Trigger @register decorators so INDICATORS is populated
+import scanner.indicators.trend  # noqa: F401
+import scanner.indicators.momentum  # noqa: F401
+import scanner.indicators.volume  # noqa: F401
+import scanner.indicators.volatility  # noqa: F401
+import scanner.indicators.candlesticks  # noqa: F401
 from scanner.indicators.registry import INDICATORS
 
 st.set_page_config(page_title="Settings", page_icon="⚙️", layout="wide")
 st.title("⚙️ Settings")
-
-db = get_db()
 
 # --- Signal Thresholds ---
 st.subheader("Signal Thresholds")
@@ -69,8 +73,11 @@ for entry in INDICATORS:
     new_toggles[name] = new_val
 
 if st.button("Save Toggles"):
-    save_settings("indicator_toggles", new_toggles)
-    st.success("Indicator toggles saved.")
+    if not new_toggles:
+        st.error("No indicators found — toggles not saved.")
+    else:
+        save_settings("indicator_toggles", new_toggles)
+        st.success("Indicator toggles saved.")
 
 st.divider()
 
