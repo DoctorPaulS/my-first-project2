@@ -20,6 +20,11 @@ def load_alerts():
 
 
 alerts = load_alerts()
+
+if not alerts:
+    st.info("No alerts yet. Alerts appear here when a watchlist stock changes signal between scans.")
+    st.stop()
+
 unread = [a for a in alerts if not a["read"]]
 read = [a for a in alerts if a["read"]]
 
@@ -32,12 +37,8 @@ with col_clear:
         st.success("All alerts cleared.")
         st.rerun()
 
-if not alerts:
-    st.info("No alerts yet. Alerts appear here when a watchlist stock changes signal between scans.")
-    st.stop()
 
-
-def render_alerts(alert_list: list[dict], mark_read: bool = False):
+def render_alerts(alert_list: list[dict]):
     for alert in alert_list:
         prev = alert["previous_signal"]
         new = alert["new_signal"]
@@ -58,8 +59,9 @@ def render_alerts(alert_list: list[dict], mark_read: bool = False):
                 st.rerun()
 
 
-st.markdown("### New")
-render_alerts(unread)
+if unread:
+    st.markdown("### New")
+    render_alerts(unread)
 
 if read:
     with st.expander(f"Show {len(read)} read alerts"):
