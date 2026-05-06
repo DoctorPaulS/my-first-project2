@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
-from db.client import get_db
+from supabase import create_client
+from config import get_secret, PORTFOLIO_CACHE_SECONDS, SIGNAL_EMOJI
 from alpaca_client import get_positions, get_account
-from config import PORTFOLIO_CACHE_SECONDS, SIGNAL_EMOJI
+
+_url = get_secret("SUPABASE_URL")
+_key = get_secret("SUPABASE_KEY")
 
 st.set_page_config(page_title="Portfolio", page_icon="💼", layout="wide")
 st.title("💼 Portfolio")
@@ -43,9 +46,9 @@ if not positions:
 
 # --- Attach latest signals from Supabase ---
 tickers = [p["symbol"] for p in positions]
-db = get_db()
+_db = create_client(_url, _key)
 signals_result = (
-    db.table("scan_results")
+    _db.table("scan_results")
     .select("ticker, score, signal, reasoning, earnings_warning")
     .in_("ticker", tickers)
     .order("scanned_at", desc=True)

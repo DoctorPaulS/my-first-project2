@@ -2,7 +2,11 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import streamlit as st
-from db.client import get_db
+from supabase import create_client
+from config import get_secret
+
+_url = get_secret("SUPABASE_URL")
+_key = get_secret("SUPABASE_KEY")
 
 st.set_page_config(
     page_title="Stock Advisor",

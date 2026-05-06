@@ -1,12 +1,14 @@
 import streamlit as st
-from db.client import get_db
-from config import SIGNAL_EMOJI
+from supabase import create_client
+from config import get_secret, SIGNAL_EMOJI
 
 st.set_page_config(page_title="Alerts", page_icon="🔔", layout="wide")
 st.title("🔔 Alerts")
 st.caption("Signal changes detected on your watchlist stocks")
 
-db = get_db()
+_url = get_secret("SUPABASE_URL")
+_key = get_secret("SUPABASE_KEY")
+db = create_client(_url, _key)
 
 
 def load_alerts():

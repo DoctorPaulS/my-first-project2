@@ -2,15 +2,17 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo
-from db.client import get_db
+from supabase import create_client
+from config import get_secret, MAX_WATCHLIST_SIZE, SIGNAL_EMOJI
 from scanner.data_fetcher import fetch_ohlcv
 from scorer import compute_score
-from config import MAX_WATCHLIST_SIZE, SIGNAL_EMOJI
 
 st.set_page_config(page_title="Watchlist", page_icon="👀", layout="wide")
 st.title("👀 Watchlist")
 
-db = get_db()
+_url = get_secret("SUPABASE_URL")
+_key = get_secret("SUPABASE_KEY")
+db = create_client(_url, _key)
 
 
 def _is_market_hours() -> bool:
