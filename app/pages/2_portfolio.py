@@ -26,6 +26,9 @@ positions, account, error = load_portfolio()
 
 if error:
     st.error(f"Could not connect to Alpaca: {error}")
+    api_key = get_secret("ALPACA_API_KEY")
+    paper_val = get_secret("ALPACA_PAPER")
+    st.code(f"ALPACA_API_KEY starts with: {api_key[:6] if api_key else 'EMPTY'}\nALPACA_PAPER = '{paper_val}'\npaper mode = {paper_val.lower() != 'false'}")
     st.info("Make sure ALPACA_API_KEY and ALPACA_SECRET_KEY are set in your Streamlit secrets.")
     st.stop()
 
