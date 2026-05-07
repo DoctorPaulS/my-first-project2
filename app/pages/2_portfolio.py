@@ -13,11 +13,6 @@ st.caption("Live Alpaca positions — read-only. Execute trades at alpaca.market
 
 
 def load_portfolio():
-    from config import get_secret as _gs
-    _k = _gs("ALPACA_API_KEY")
-    _s = _gs("ALPACA_SECRET_KEY")
-    _p = _gs("ALPACA_PAPER")
-    st.caption(f"DEBUG key={_k[:6]} secret={_s[:6]} paper={_p}")
     try:
         positions = get_positions()
         account = get_account()
