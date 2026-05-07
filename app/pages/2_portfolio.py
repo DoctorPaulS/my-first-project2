@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client
-from config import get_secret, PORTFOLIO_CACHE_SECONDS, SIGNAL_EMOJI
+from config import get_secret, SIGNAL_EMOJI
 from alpaca_client import get_positions, get_account
 
 _url = get_secret("SUPABASE_URL")
@@ -12,7 +12,6 @@ st.title("💼 Portfolio")
 st.caption("Live Alpaca positions — read-only. Execute trades at alpaca.markets.")
 
 
-@st.cache_data(ttl=PORTFOLIO_CACHE_SECONDS)
 def load_portfolio():
     try:
         positions = get_positions()
