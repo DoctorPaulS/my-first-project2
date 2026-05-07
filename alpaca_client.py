@@ -1,9 +1,7 @@
-from functools import lru_cache
 from alpaca.trading.client import TradingClient
 from config import get_secret
 
 
-@lru_cache(maxsize=1)
 def _get_trading_client() -> TradingClient:
     api_key = get_secret("ALPACA_API_KEY")
     secret_key = get_secret("ALPACA_SECRET_KEY")
