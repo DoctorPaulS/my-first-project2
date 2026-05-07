@@ -102,10 +102,7 @@ event = st.dataframe(
     on_select="rerun",
     selection_mode="single-row",
     column_config={
-        "Ticker": st.column_config.TextColumn("Ticker", width=80),
-        "Score": st.column_config.NumberColumn("Score", format="%.1f", width=70),
-        "Signal": st.column_config.TextColumn("Signal", width=180),
-        "Reason": st.column_config.TextColumn("Reason"),
+        "Score": st.column_config.NumberColumn("Score", format="%.1f"),
     },
 )
 
