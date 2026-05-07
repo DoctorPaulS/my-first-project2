@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import yfinance as yf
 from supabase import create_client
-from config import get_secret, MAX_WATCHLIST_SIZE
+from config import get_secret, MAX_WATCHLIST_SIZE, SP500_WIKIPEDIA_URL
 from scorer import format_signal
 from scanner.data_fetcher import fetch_ohlcv
 
@@ -12,6 +11,22 @@ st.title("🔍 Stock Screener")
 
 _url = get_secret("SUPABASE_URL")
 _key = get_secret("SUPABASE_KEY")
+
+
+@st.cache_data(ttl=86400)
+def _load_company_names() -> dict:
+    try:
+        tables = pd.read_html(
+            SP500_WIKIPEDIA_URL,
+            storage_options={"User-Agent": "Mozilla/5.0 (compatible; stock-advisor-bot/1.0)"},
+        )
+        df = tables[0]
+        return dict(zip(df["Symbol"].str.replace(".", "-", regex=False), df["Security"]))
+    except Exception:
+        return {}
+
+
+_company_names = _load_company_names()
 
 
 @st.cache_data(ttl=300)
@@ -87,10 +102,10 @@ event = st.dataframe(
     on_select="rerun",
     selection_mode="single-row",
     column_config={
-        "Ticker": st.column_config.TextColumn("Ticker", width="small"),
-        "Score": st.column_config.NumberColumn("Score", format="%.1f", width="small"),
-        "Signal": st.column_config.TextColumn("Signal", width="medium"),
-        "Reason": st.column_config.TextColumn("Reason", width="large"),
+        "Ticker": st.column_config.TextColumn("Ticker", width=80),
+        "Score": st.column_config.NumberColumn("Score", format="%.1f", width=70),
+        "Signal": st.column_config.TextColumn("Signal", width=180),
+        "Reason": st.column_config.TextColumn("Reason"),
     },
 )
 
@@ -101,11 +116,7 @@ if event.selection.rows:
     ticker = row["ticker"]
 
     st.divider()
-    try:
-        info = yf.Ticker(ticker).info
-        company_name = info.get("longName") or info.get("shortName") or ticker
-    except Exception:
-        company_name = ticker
+    company_name = _company_names.get(ticker, ticker)
 
     col_title, col_btn = st.columns([4, 1])
     with col_title:
