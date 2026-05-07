@@ -85,14 +85,12 @@ if earnings_only:
     filtered = filtered[filtered["earnings_warning"] == True]
 
 # --- Results table ---
-display_cols = ["ticker", "score", "display_signal", "reasoning"]
+display_cols = ["ticker", "score", "display_signal"]
 display_df = filtered[display_cols].rename(columns={
     "ticker": "Ticker",
     "score": "Score",
     "display_signal": "Signal",
-    "reasoning": "Reason",
 }).copy()
-display_df["Reason"] = display_df["Reason"].str[:300] + "..."
 
 st.subheader(f"{len(filtered)} stocks match your filters")
 event = st.dataframe(
@@ -105,6 +103,11 @@ event = st.dataframe(
         "Score": st.column_config.NumberColumn("Score", format="%.1f"),
     },
 )
+
+# Reason preview for selected row
+if event.selection.rows:
+    preview_row = filtered.iloc[event.selection.rows[0]]
+    st.caption(f"**{preview_row['ticker']}** — {preview_row['reasoning'][:250]}...")
 
 # --- Expanded analysis card ---
 if event.selection.rows:
