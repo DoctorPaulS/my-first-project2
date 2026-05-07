@@ -76,7 +76,7 @@ display_df = filtered[display_cols].rename(columns={
     "display_signal": "Signal",
     "reasoning": "Reason",
 }).copy()
-display_df["Reason"] = display_df["Reason"].str[:120] + "..."
+display_df["Reason"] = display_df["Reason"].str[:300] + "..."
 
 st.subheader(f"{len(filtered)} stocks match your filters")
 event = st.dataframe(
@@ -85,6 +85,12 @@ event = st.dataframe(
     hide_index=True,
     on_select="rerun",
     selection_mode="single-row",
+    column_config={
+        "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+        "Score": st.column_config.NumberColumn("Score", format="%.1f", width="small"),
+        "Signal": st.column_config.TextColumn("Signal", width="medium"),
+        "Reason": st.column_config.TextColumn("Reason", width="large"),
+    },
 )
 
 # --- Expanded analysis card ---
