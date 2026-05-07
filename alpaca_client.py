@@ -44,9 +44,10 @@ def get_account() -> dict:
 
 
 def get_portfolio_history(period: str = "1M") -> dict:
+    timeframe = "15Min" if period == "1D" else "1D"
     r = requests.get(
         f"{_base_url()}/account/portfolio/history",
-        params={"period": period, "timeframe": "1D"},
+        params={"period": period, "timeframe": timeframe},
         headers=_headers(),
     )
     r.raise_for_status()

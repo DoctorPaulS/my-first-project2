@@ -9,6 +9,7 @@ st.title("📊 Performance")
 st.caption("Your portfolio vs S&P 500 (SPY) and Total Market (VTI)")
 
 PERIOD_MAP = {
+    "1 Day": "1D",
     "1 Week": "1W",
     "1 Month": "1M",
     "3 Months": "3M",
@@ -16,18 +17,20 @@ PERIOD_MAP = {
     "1 Year": "1Y",
 }
 
-period_label = st.selectbox("Time Period", list(PERIOD_MAP.keys()), index=1)
+period_label = st.selectbox("Time Period", list(PERIOD_MAP.keys()), index=2)
 period = PERIOD_MAP[period_label]
 
-yf_period_map = {"1W": "5d", "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}
+yf_period_map = {"1D": "1d", "1W": "5d", "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}
+yf_interval_map = {"1D": "15m", "1W": "1h", "1M": "1d", "3M": "1d", "6M": "1d", "1Y": "1d"}
 yf_period = yf_period_map[period]
+yf_interval = yf_interval_map[period]
 
 
 @st.cache_data(ttl=3600)
-def load_benchmarks(yf_period: str):
+def load_benchmarks(yf_period: str, yf_interval: str):
     try:
-        spy = yf.download("SPY", period=yf_period, auto_adjust=True, progress=False)["Close"].squeeze()
-        vti = yf.download("VTI", period=yf_period, auto_adjust=True, progress=False)["Close"].squeeze()
+        spy = yf.download("SPY", period=yf_period, interval=yf_interval, auto_adjust=True, progress=False)["Close"].squeeze()
+        vti = yf.download("VTI", period=yf_period, interval=yf_interval, auto_adjust=True, progress=False)["Close"].squeeze()
     except Exception as e:
         st.warning(f"Could not load benchmark data: {e}")
         spy = pd.Series(dtype=float)
@@ -35,7 +38,6 @@ def load_benchmarks(yf_period: str):
     return spy, vti
 
 
-@st.cache_data(ttl=300)
 def load_portfolio(period: str):
     try:
         return get_portfolio_history(period=period), None
@@ -43,7 +45,7 @@ def load_portfolio(period: str):
         return None, str(e)
 
 
-spy, vti = load_benchmarks(yf_period)
+spy, vti = load_benchmarks(yf_period, yf_interval)
 portfolio_history, error = load_portfolio(period)
 
 if error:
