@@ -1,54 +1,57 @@
-from alpaca.trading.client import TradingClient
+import requests
 from config import get_secret
 
 
-def _get_trading_client() -> TradingClient:
-    api_key = get_secret("ALPACA_API_KEY")
-    secret_key = get_secret("ALPACA_SECRET_KEY")
+def _base_url() -> str:
     paper_val = get_secret("ALPACA_PAPER")
     paper = paper_val.lower() != "false"
-    if not api_key or not secret_key:
-        raise RuntimeError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set.")
-    url = "https://paper-api.alpaca.markets" if paper else "https://api.alpaca.markets"
-    return TradingClient(api_key=api_key, secret_key=secret_key, paper=paper, url_override=url)
+    return "https://paper-api.alpaca.markets/v2" if paper else "https://api.alpaca.markets/v2"
+
+
+def _headers() -> dict:
+    return {
+        "APCA-API-KEY-ID": get_secret("ALPACA_API_KEY"),
+        "APCA-API-SECRET-KEY": get_secret("ALPACA_SECRET_KEY"),
+    }
 
 
 def get_positions() -> list[dict]:
-    """Return all open Alpaca positions as plain dicts."""
-    client = _get_trading_client()
-    positions = client.get_all_positions()
+    r = requests.get(f"{_base_url()}/positions", headers=_headers())
+    r.raise_for_status()
     return [
         {
-            "symbol": p.symbol,
-            "qty": float(p.qty),
-            "current_price": float(p.current_price),
-            "market_value": float(p.market_value),
-            "unrealized_pl": float(p.unrealized_pl),
-            "unrealized_plpc": float(p.unrealized_plpc),
-            "cost_basis": float(p.cost_basis),
+            "symbol": p["symbol"],
+            "qty": float(p["qty"]),
+            "current_price": float(p["current_price"]),
+            "market_value": float(p["market_value"]),
+            "unrealized_pl": float(p["unrealized_pl"]),
+            "unrealized_plpc": float(p["unrealized_plpc"]),
+            "cost_basis": float(p["cost_basis"]),
         }
-        for p in positions
+        for p in r.json()
     ]
 
 
 def get_account() -> dict:
-    """Return key account metrics as a plain dict."""
-    client = _get_trading_client()
-    a = client.get_account()
+    r = requests.get(f"{_base_url()}/account", headers=_headers())
+    r.raise_for_status()
+    a = r.json()
     return {
-        "portfolio_value": float(a.portfolio_value),
-        "buying_power": float(a.buying_power),
-        "cash": float(a.cash),
+        "portfolio_value": float(a["portfolio_value"]),
+        "buying_power": float(a["buying_power"]),
+        "cash": float(a["cash"]),
     }
 
 
 def get_portfolio_history(period: str = "1M") -> dict:
-    """Return portfolio equity history for charting. Period: 1W, 1M, 3M, 6M, 1Y."""
-    from alpaca.trading.requests import GetPortfolioHistoryRequest
-    client = _get_trading_client()
-    req = GetPortfolioHistoryRequest(period=period, timeframe="1D")
-    history = client.get_portfolio_history(filter=req)
+    r = requests.get(
+        f"{_base_url()}/account/portfolio/history",
+        params={"period": period, "timeframe": "1D"},
+        headers=_headers(),
+    )
+    r.raise_for_status()
+    data = r.json()
     return {
-        "timestamps": history.timestamp,
-        "equity": history.equity,
+        "timestamps": data["timestamp"],
+        "equity": data["equity"],
     }
