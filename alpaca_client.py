@@ -7,7 +7,8 @@ from config import get_secret
 def _get_trading_client() -> TradingClient:
     api_key = get_secret("ALPACA_API_KEY")
     secret_key = get_secret("ALPACA_SECRET_KEY")
-    paper = get_secret("ALPACA_PAPER").lower() == "true"
+    paper_val = get_secret("ALPACA_PAPER")
+    paper = paper_val.lower() != "false"  # default to paper=True unless explicitly set to "false"
     if not api_key or not secret_key:
         raise RuntimeError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set.")
     return TradingClient(api_key=api_key, secret_key=secret_key, paper=paper)
