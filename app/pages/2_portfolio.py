@@ -24,17 +24,15 @@ def load_portfolio():
 positions, account, error = load_portfolio()
 
 if error:
-    st.error(f"Could not connect to Alpaca: {error}")
+    st.error(f"SDK error: {error}")
+    import requests
     api_key = get_secret("ALPACA_API_KEY")
     secret_key = get_secret("ALPACA_SECRET_KEY")
-    paper_val = get_secret("ALPACA_PAPER")
-    st.code(
-        f"ALPACA_API_KEY starts with: {api_key[:6] if api_key else 'EMPTY'}\n"
-        f"ALPACA_SECRET_KEY starts with: {secret_key[:6] if secret_key else 'EMPTY'}\n"
-        f"ALPACA_PAPER = '{paper_val}'\n"
-        f"paper mode = {paper_val.lower() != 'false'}"
+    r = requests.get(
+        "https://paper-api.alpaca.markets/v2/account",
+        headers={"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": secret_key},
     )
-    st.info("Make sure ALPACA_API_KEY and ALPACA_SECRET_KEY are set in your Streamlit secrets.")
+    st.code(f"Direct API test: {r.status_code}\n{r.text[:300]}")
     st.stop()
 
 # --- Account summary ---
