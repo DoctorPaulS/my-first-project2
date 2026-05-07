@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import yfinance as yf
 from supabase import create_client
 from config import get_secret, MAX_WATCHLIST_SIZE
 from scorer import format_signal
@@ -100,9 +101,15 @@ if event.selection.rows:
     ticker = row["ticker"]
 
     st.divider()
+    try:
+        info = yf.Ticker(ticker).info
+        company_name = info.get("longName") or info.get("shortName") or ticker
+    except Exception:
+        company_name = ticker
+
     col_title, col_btn = st.columns([4, 1])
     with col_title:
-        st.subheader(f"Analysis: {ticker}")
+        st.subheader(f"{company_name} ({ticker})")
     with col_btn:
         _db = create_client(_url, _key)
         watchlist_result = _db.table("watchlist").select("ticker").eq("ticker", ticker).execute()
