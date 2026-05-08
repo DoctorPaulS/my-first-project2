@@ -5,6 +5,8 @@ from supabase import create_client
 from config import get_secret, MAX_WATCHLIST_SIZE, SP500_WIKIPEDIA_URL
 from scorer import format_signal
 from scanner.data_fetcher import fetch_ohlcv
+from scanner.exit_targets import calc_exit_targets
+from scanner.ai_summary import generate_ai_summary, fetch_headlines
 
 st.set_page_config(page_title="Screener", page_icon="🔍", layout="wide")
 st.title("🔍 Stock Screener")
@@ -145,30 +147,88 @@ if event.selection.rows:
     with col_earnings:
         st.metric("Earnings Warning", "⚠️ Yes" if row["earnings_warning"] else "No")
 
-    st.markdown("**Full Reasoning:**")
-    st.write(row["reasoning"])
+    # --- Bullish / Bearish bullets ---
+    detail = row["indicator_detail"] if isinstance(row["indicator_detail"], dict) else {}
+    if detail:
+        bullish = [(n, v) for n, v in detail.items() if v.get("score", 0) >= 6]
+        bearish = [(n, v) for n, v in detail.items() if v.get("score", 0) < 4]
+        mixed   = [(n, v) for n, v in detail.items() if 4 <= v.get("score", 0) < 6]
 
-    if isinstance(row["indicator_detail"], dict) and row["indicator_detail"]:
-        st.markdown("**Indicator Breakdown:**")
-        detail = row["indicator_detail"]
-        detail_df = pd.DataFrame([
-            {"Indicator": name, "Score": f"{v['score']:.1f}/10", "Group": v["group"], "Notes": v["reasoning"]}
-            for name, v in detail.items()
-        ])
-        st.dataframe(detail_df, use_container_width=True, hide_index=True)
+        col_bull, col_bear, col_mix = st.columns(3)
+        with col_bull:
+            st.markdown("**🟢 Why Buy**")
+            if bullish:
+                for name, v in bullish:
+                    st.markdown(f"- **{name}** ({v['score']:.1f}/10): {v['reasoning']}")
+            else:
+                st.caption("No strongly bullish indicators")
+        with col_bear:
+            st.markdown("**🔴 Why Reduce / Risk**")
+            if bearish:
+                for name, v in bearish:
+                    st.markdown(f"- **{name}** ({v['score']:.1f}/10): {v['reasoning']}")
+            else:
+                st.caption("No strongly bearish indicators")
+        with col_mix:
+            st.markdown("**🟡 Mixed / Watch**")
+            if mixed:
+                for name, v in mixed:
+                    st.markdown(f"- **{name}** ({v['score']:.1f}/10): {v['reasoning']}")
+            else:
+                st.caption("No mixed indicators")
 
+    # --- Price chart + exit targets ---
     st.markdown("**Price Chart (6 months):**")
     try:
-        ohlcv = fetch_ohlcv(ticker, period="6mo")
+        ohlcv_chart = fetch_ohlcv(ticker, period="6mo")
+        ohlcv_full  = fetch_ohlcv(ticker, period="1y")
+
         fig = go.Figure(data=[
             go.Candlestick(
-                x=ohlcv.index,
-                open=ohlcv["Open"], high=ohlcv["High"],
-                low=ohlcv["Low"], close=ohlcv["Close"],
+                x=ohlcv_chart.index,
+                open=ohlcv_chart["Open"], high=ohlcv_chart["High"],
+                low=ohlcv_chart["Low"], close=ohlcv_chart["Close"],
                 name=ticker,
             )
         ])
-        fig.update_layout(xaxis_rangeslider_visible=False, height=400, margin=dict(l=0, r=0, t=30, b=0))
+
+        targets = calc_exit_targets(ohlcv_full)
+        for label, price, color, dash in [
+            ("Stop Loss", targets["stop"], "red", "dash"),
+            ("Target 1 (2:1)", targets["target1"], "lime", "dot"),
+            ("Target 2 (3:1)", targets["target2"], "cyan", "dot"),
+            ("Resistance", targets["resistance"], "orange", "dashdot"),
+        ]:
+            fig.add_hline(y=price, line_color=color, line_dash=dash,
+                          annotation_text=f"{label} ${price:.2f}",
+                          annotation_position="right")
+
+        fig.update_layout(xaxis_rangeslider_visible=False, height=450, margin=dict(l=0, r=0, t=30, b=0))
         st.plotly_chart(fig, use_container_width=True)
+
+        ec1, ec2, ec3, ec4 = st.columns(4)
+        ec1.metric("Stop Loss", f"${targets['stop']:.2f}", f"-{targets['risk_pct']:.1f}%", delta_color="inverse")
+        ec2.metric("Target 1 (2:1 R/R)", f"${targets['target1']:.2f}")
+        ec3.metric("Target 2 (3:1 R/R)", f"${targets['target2']:.2f}")
+        ec4.metric("Resistance", f"${targets['resistance']:.2f}")
+
     except Exception as e:
         st.warning(f"Could not load chart: {e}")
+
+    # --- AI Summary ---
+    st.markdown("**AI Analyst Summary:**")
+    with st.spinner("Generating summary..."):
+        headlines = fetch_headlines(ticker)
+        summary = generate_ai_summary(
+            ticker=ticker,
+            company_name=company_name,
+            signal=row["signal"],
+            score=row["score"],
+            indicator_detail=detail,
+            headlines=headlines,
+        )
+    st.info(summary)
+    if headlines:
+        with st.expander("News headlines used"):
+            for h in headlines:
+                st.markdown(f"- {h}")
