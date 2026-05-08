@@ -212,6 +212,49 @@ if event.selection.rows:
         ec3.metric("Target 2 (3:1 R/R)", f"${targets['target2']:.2f}")
         ec4.metric("Resistance", f"${targets['resistance']:.2f}")
 
+        # --- Save / manage targets ---
+        st.markdown("**Monitor These Targets:**")
+        _db = create_client(_url, _key)
+        existing = _db.table("price_targets").select("*").eq("ticker", ticker).execute()
+        saved = existing.data[0] if existing.data else None
+
+        with st.form(key=f"targets_{ticker}"):
+            fc1, fc2, fc3 = st.columns(3)
+            s_stop = fc1.number_input("Stop Loss ($)", value=round(saved["stop_loss"] if saved else targets["stop"], 2), step=0.01, format="%.2f")
+            s_t1   = fc2.number_input("Target 1 ($)",  value=round(saved["target1"]   if saved else targets["target1"], 2), step=0.01, format="%.2f")
+            s_t2   = fc3.number_input("Target 2 ($)",  value=round(saved["target2"]   if saved else targets["target2"], 2), step=0.01, format="%.2f")
+            btn_col, status_col = st.columns([1, 3])
+            save_btn   = btn_col.form_submit_button("💾 Save Targets", use_container_width=True)
+            remove_btn = btn_col.form_submit_button("🗑️ Remove", use_container_width=True) if saved else False
+
+        if save_btn:
+            _db.table("price_targets").upsert({
+                "ticker": ticker,
+                "stop_loss": s_stop,
+                "target1": s_t1,
+                "target2": s_t2,
+                "stop_triggered": False,
+                "target1_triggered": False,
+                "target2_triggered": False,
+            }, on_conflict="ticker").execute()
+            st.success(f"Targets saved for {ticker} — scanner will alert you when levels are hit.")
+            st.rerun()
+
+        if remove_btn:
+            _db.table("price_targets").delete().eq("ticker", ticker).execute()
+            st.success(f"Targets removed for {ticker}.")
+            st.rerun()
+
+        if saved:
+            flags = []
+            if saved["stop_triggered"]:   flags.append("🔴 Stop Loss triggered")
+            if saved["target1_triggered"]: flags.append("🟢 Target 1 triggered")
+            if saved["target2_triggered"]: flags.append("🟢 Target 2 triggered")
+            if flags:
+                st.warning("  |  ".join(flags))
+            else:
+                st.caption("✅ Monitoring active — alerts fire at next scan when levels are crossed.")
+
     except Exception as e:
         st.warning(f"Could not load chart: {e}")
 

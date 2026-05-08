@@ -43,3 +43,21 @@ INSERT INTO settings (key, value) VALUES
     ('group_weights', '{"trend": 0.30, "momentum": 0.25, "volume": 0.20, "volatility": 0.15, "candlesticks": 0.10}'),
     ('indicator_toggles', '{}')
 ON CONFLICT (key) DO NOTHING;
+
+-- Migration: price targets and alert types
+-- Run this block separately if the tables above already exist
+
+CREATE TABLE IF NOT EXISTS price_targets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticker TEXT NOT NULL UNIQUE,
+    stop_loss FLOAT NOT NULL,
+    target1 FLOAT NOT NULL,
+    target2 FLOAT NOT NULL,
+    stop_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+    target1_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+    target2_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS alert_type TEXT NOT NULL DEFAULT 'signal';
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS message TEXT;

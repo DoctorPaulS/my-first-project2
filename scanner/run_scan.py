@@ -103,6 +103,55 @@ def run_scan() -> None:
         log.info(f"Writing {len(alerts_to_insert)} alerts...")
         db.table("alerts").insert(alerts_to_insert).execute()
 
+    # --- Check price targets ---
+    pt_result = db.table("price_targets").select("*").execute()
+    price_target_alerts = []
+    price_target_updates = []
+
+    for pt in pt_result.data:
+        ticker = pt["ticker"]
+        if ticker not in ohlcv_map:
+            continue
+        current_price = float(ohlcv_map[ticker]["Close"].iloc[-1])
+
+        if not pt["stop_triggered"] and current_price <= pt["stop_loss"]:
+            price_target_alerts.append({
+                "ticker": ticker,
+                "previous_signal": "",
+                "new_signal": "",
+                "alert_type": "price_target",
+                "message": f"🔴 Stop Loss hit — {ticker} at ${current_price:.2f} (stop: ${pt['stop_loss']:.2f})",
+            })
+            price_target_updates.append({"id": pt["id"], "stop_triggered": True})
+
+        if not pt["target1_triggered"] and current_price >= pt["target1"]:
+            price_target_alerts.append({
+                "ticker": ticker,
+                "previous_signal": "",
+                "new_signal": "",
+                "alert_type": "price_target",
+                "message": f"🟢 Target 1 hit — {ticker} at ${current_price:.2f} (target: ${pt['target1']:.2f})",
+            })
+            price_target_updates.append({"id": pt["id"], "target1_triggered": True})
+
+        if not pt["target2_triggered"] and current_price >= pt["target2"]:
+            price_target_alerts.append({
+                "ticker": ticker,
+                "previous_signal": "",
+                "new_signal": "",
+                "alert_type": "price_target",
+                "message": f"🟢 Target 2 hit — {ticker} at ${current_price:.2f} (target: ${pt['target2']:.2f})",
+            })
+            price_target_updates.append({"id": pt["id"], "target2_triggered": True})
+
+    if price_target_alerts:
+        log.info(f"Writing {len(price_target_alerts)} price target alerts...")
+        db.table("alerts").insert(price_target_alerts).execute()
+
+    for update in price_target_updates:
+        row_id = update.pop("id")
+        db.table("price_targets").update(update).eq("id", row_id).execute()
+
     log.info("Scan complete.")
 
 
