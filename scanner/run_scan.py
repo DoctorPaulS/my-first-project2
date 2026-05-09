@@ -5,7 +5,7 @@ Run with: python -m scanner.run_scan
 import sys
 import logging
 from datetime import datetime, timezone, date, timedelta
-from scanner.universe import get_sp500_tickers
+from scanner.universe import get_universe_tickers
 from scanner.data_fetcher import fetch_ohlcv_batch, fetch_earnings_date
 from scanner.sentiment import get_sentiment
 from scorer import compute_score, format_signal
@@ -22,8 +22,8 @@ log = logging.getLogger(__name__)
 
 def run_scan() -> None:
     log.info("Starting S&P 500 scan...")
-    tickers = get_sp500_tickers()
-    log.info(f"Universe: {len(tickers)} tickers")
+    tickers = get_universe_tickers()
+    log.info(f"Universe: {len(tickers)} tickers (S&P 500 + S&P 400)")
 
     log.info("Downloading price data (batch)...")
     ohlcv_map = fetch_ohlcv_batch(tickers)

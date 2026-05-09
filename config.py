@@ -27,6 +27,7 @@ SIGNAL_EMOJI = {
 }
 
 SP500_WIKIPEDIA_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+SP400_WIKIPEDIA_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_400_companies"
 
 MARKET_OPEN_HOUR_ET = 9
 MARKET_OPEN_MINUTE_ET = 30

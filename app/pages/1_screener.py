@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from supabase import create_client
-from config import get_secret, MAX_WATCHLIST_SIZE, SP500_WIKIPEDIA_URL
+from config import get_secret, MAX_WATCHLIST_SIZE, SP500_WIKIPEDIA_URL, SP400_WIKIPEDIA_URL
 from scorer import format_signal
 from scanner.data_fetcher import fetch_ohlcv
 from scanner.exit_targets import calc_exit_targets
@@ -17,15 +17,15 @@ _key = get_secret("SUPABASE_KEY")
 
 @st.cache_data(ttl=86400)
 def _load_company_names() -> dict:
-    try:
-        tables = pd.read_html(
-            SP500_WIKIPEDIA_URL,
-            storage_options={"User-Agent": "Mozilla/5.0 (compatible; stock-advisor-bot/1.0)"},
-        )
-        df = tables[0]
-        return dict(zip(df["Symbol"].str.replace(".", "-", regex=False), df["Security"]))
-    except Exception:
-        return {}
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; stock-advisor-bot/1.0)"}
+    names = {}
+    for url, col in [(SP500_WIKIPEDIA_URL, "Security"), (SP400_WIKIPEDIA_URL, "Company")]:
+        try:
+            df = pd.read_html(url, storage_options=headers)[0]
+            names.update(dict(zip(df["Symbol"].str.replace(".", "-", regex=False), df[col])))
+        except Exception:
+            pass
+    return names
 
 
 _company_names = _load_company_names()
