@@ -61,3 +61,23 @@ CREATE TABLE IF NOT EXISTS price_targets (
 
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS alert_type TEXT NOT NULL DEFAULT 'signal';
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS message TEXT;
+
+-- Migration: momentum scan results
+-- Run this block separately if the tables above already exist
+
+CREATE TABLE IF NOT EXISTS momentum_results (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticker TEXT NOT NULL,
+    scanned_at TIMESTAMPTZ NOT NULL,
+    current_price FLOAT,
+    volume_surge FLOAT,
+    price_change_5d FLOAT,
+    price_change_20d FLOAT,
+    pct_from_high FLOAT,
+    momentum_score FLOAT,
+    summary TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_momentum_scanned_at ON momentum_results(scanned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_momentum_ticker ON momentum_results(ticker);
