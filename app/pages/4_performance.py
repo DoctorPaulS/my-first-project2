@@ -2,11 +2,11 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
-from alpaca_client import get_portfolio_history
+from alpaca_client import get_positions
 
 st.set_page_config(page_title="Performance", page_icon="📊", layout="wide")
 st.title("📊 Performance")
-st.caption("Your portfolio vs S&P 500 (SPY) and Total Market (VTI)")
+st.caption("Invested positions vs S&P 500 (SPY) and Total Market (VTI) — cash excluded")
 
 PERIOD_MAP = {
     "1 Day": "1D",
@@ -20,9 +20,9 @@ PERIOD_MAP = {
 period_label = st.selectbox("Time Period", list(PERIOD_MAP.keys()), index=2)
 period = PERIOD_MAP[period_label]
 
-yf_period_map = {"1D": "1d", "1W": "5d", "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}
-yf_interval_map = {"1D": "15m", "1W": "1h", "1M": "1d", "3M": "1d", "6M": "1d", "1Y": "1d"}
-yf_period = yf_period_map[period]
+yf_period_map   = {"1D": "1d",  "1W": "5d",  "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}
+yf_interval_map = {"1D": "15m", "1W": "1h",  "1M": "1d",  "3M": "1d",  "6M": "1d",  "1Y": "1d"}
+yf_period   = yf_period_map[period]
 yf_interval = yf_interval_map[period]
 
 
@@ -38,28 +38,58 @@ def load_benchmarks(yf_period: str, yf_interval: str):
     return spy, vti
 
 
-def load_portfolio(period: str):
+def load_positions_performance(yf_period: str, yf_interval: str) -> pd.Series | None:
+    """
+    Build a portfolio equity curve from actual position quantities × historical prices.
+    Cash is excluded — only invested holdings are reflected.
+    """
     try:
-        return get_portfolio_history(period=period), None
-    except Exception as e:
-        return None, str(e)
+        positions = get_positions()
+    except Exception:
+        return None
+
+    if not positions:
+        return None
+
+    portfolio_value = None
+    for pos in positions:
+        ticker = pos["symbol"]
+        qty = pos["qty"]
+        try:
+            prices = yf.download(
+                ticker, period=yf_period, interval=yf_interval,
+                auto_adjust=True, progress=False,
+            )["Close"].squeeze()
+            if prices.empty or len(prices) < 2:
+                continue
+            holding_value = prices * qty
+            portfolio_value = holding_value if portfolio_value is None else portfolio_value.add(holding_value, fill_value=0)
+        except Exception:
+            continue
+
+    return portfolio_value
 
 
 spy, vti = load_benchmarks(yf_period, yf_interval)
-portfolio_history, error = load_portfolio(period)
 
-if error:
-    st.warning(f"Could not load portfolio history from Alpaca: {error}")
-    portfolio_history = None
+with st.spinner("Loading position history..."):
+    port_value = load_positions_performance(yf_period, yf_interval)
 
 fig = go.Figure()
 
-if portfolio_history and len(portfolio_history.get("equity") or []) > 0:
-    port_ts = pd.to_datetime(portfolio_history["timestamps"], unit="s")
-    port_equity = pd.Series(portfolio_history["equity"], index=port_ts)
-    if port_equity.iloc[0] > 0:
-        port_norm = port_equity / port_equity.iloc[0] * 100
-        fig.add_trace(go.Scatter(x=port_norm.index, y=port_norm, name="My Portfolio", line=dict(color="#00D4AA", width=2)))
+port_series_for_stats = None
+if port_value is not None and len(port_value.dropna()) >= 2:
+    port_clean = port_value.dropna()
+    if port_clean.iloc[0] > 0:
+        port_norm = port_clean / port_clean.iloc[0] * 100
+        port_series_for_stats = port_clean
+        fig.add_trace(go.Scatter(
+            x=port_norm.index, y=port_norm,
+            name="My Positions",
+            line=dict(color="#00D4AA", width=2),
+        ))
+else:
+    st.info("No open positions found — add positions in your Alpaca paper account to see performance.")
 
 if not spy.empty:
     spy_norm = spy / spy.iloc[0] * 100
@@ -78,9 +108,10 @@ fig.update_layout(
 st.plotly_chart(fig, use_container_width=True)
 
 
-def calc_stats(series: pd.Series) -> dict:
+def calc_stats(series: pd.Series | None) -> dict:
     if series is None or len(series) < 2:
         return {"Total Return": "—", "Max Drawdown": "—", "Volatility (ann.)": "—"}
+    series = series.dropna()
     ret = (series.iloc[-1] / series.iloc[0]) - 1
     daily_ret = series.pct_change().dropna()
     roll_max = series.cummax()
@@ -93,12 +124,8 @@ def calc_stats(series: pd.Series) -> dict:
     }
 
 
-port_series = None
-if portfolio_history and len(portfolio_history.get("equity") or []) > 0:
-    port_series = pd.Series(portfolio_history["equity"])
-
 stats = {
-    "Portfolio": calc_stats(port_series),
+    "My Positions": calc_stats(port_series_for_stats),
     "SPY": calc_stats(spy.reset_index(drop=True) if not spy.empty else None),
     "VTI": calc_stats(vti.reset_index(drop=True) if not vti.empty else None),
 }
