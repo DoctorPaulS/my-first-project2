@@ -81,3 +81,24 @@ CREATE TABLE IF NOT EXISTS momentum_results (
 
 CREATE INDEX IF NOT EXISTS idx_momentum_scanned_at ON momentum_results(scanned_at DESC);
 CREATE INDEX IF NOT EXISTS idx_momentum_ticker ON momentum_results(ticker);
+
+-- Migration: automated trading log
+-- Run this block separately if the tables above already exist
+
+CREATE TABLE IF NOT EXISTS auto_trades (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticker TEXT NOT NULL,
+    score FLOAT,
+    signal TEXT,
+    order_type TEXT,
+    qty FLOAT,
+    limit_price FLOAT,
+    stop_price FLOAT,
+    order_id TEXT,
+    status TEXT NOT NULL,
+    error TEXT,
+    traded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auto_trades_traded_at ON auto_trades(traded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auto_trades_ticker ON auto_trades(ticker);

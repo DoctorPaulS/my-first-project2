@@ -1,0 +1,32 @@
+name: Daily Auto Trader
+
+on:
+  schedule:
+    # Every weekday at 9:35am ET (13:35 UTC) — 5 min after market open
+    - cron: "35 13 * * 1-5"
+  workflow_dispatch:  # Allow manual runs from GitHub Actions UI
+
+jobs:
+  auto-trade:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run auto trader
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          ALPACA_AUTO_API_KEY: ${{ secrets.ALPACA_AUTO_API_KEY }}
+          ALPACA_AUTO_SECRET_KEY: ${{ secrets.ALPACA_AUTO_SECRET_KEY }}
+        run: python -m scanner.auto_trader
