@@ -44,7 +44,8 @@ def _get(path: str, params: dict = None) -> dict | list:
 
 def _post(path: str, body: dict) -> dict:
     r = requests.post(f"{_base_url()}{path}", headers=_headers(), json=body)
-    r.raise_for_status()
+    if not r.ok:
+        raise requests.HTTPError(f"{r.status_code} {r.reason}: {r.text}", response=r)
     return r.json()
 
 
@@ -69,19 +70,30 @@ def get_latest_price(ticker: str) -> float | None:
         return None
 
 
-def place_order(ticker: str, qty: float, order_type: str, limit_price: float | None, stop_price: float | None) -> dict:
+def place_buy_order(ticker: str, qty: int, order_type: str, limit_price: float | None) -> dict:
+    """Place a simple buy order (whole shares only, no bracket)."""
     body = {
         "symbol":        ticker,
-        "qty":           str(round(qty, 6)),
+        "qty":           str(qty),
         "side":          "buy",
         "type":          order_type,
         "time_in_force": "day",
     }
     if order_type == "limit" and limit_price:
         body["limit_price"] = str(round(limit_price, 2))
-    if stop_price:
-        body["order_class"] = "oto"
-        body["stop_loss"]   = {"stop_price": str(round(stop_price, 2))}
+    return _post("/orders", body)
+
+
+def place_stop_order(ticker: str, qty: int, stop_price: float) -> dict:
+    """Place a stop-loss sell order for an existing position."""
+    body = {
+        "symbol":        ticker,
+        "qty":           str(qty),
+        "side":          "sell",
+        "type":          "stop",
+        "time_in_force": "gtc",
+        "stop_price":    str(round(stop_price, 2)),
+    }
     return _post("/orders", body)
 
 
@@ -146,31 +158,40 @@ def run_auto_trader() -> None:
             log.warning(f"  SKIP {ticker} — could not fetch price")
             continue
 
-        qty = trade_budget / price
+        qty = int(trade_budget / price)
+        if qty < 1:
+            log.info(f"  SKIP {ticker} — price ${price:.2f} too high for budget ${trade_budget:.0f}")
+            continue
+
+        stop_price = round(price * 0.92, 2)  # 8% trailing stop fallback
 
         if score >= HIGH_CONVICTION_SCORE:
             order_type  = "market"
             limit_price = None
-            log.info(f"  {ticker} score={score:.1f} → MARKET order qty={qty:.4f}")
+            log.info(f"  {ticker} score={score:.1f} → MARKET order {qty} shares")
         else:
             order_type  = "limit"
             limit_price = round(price * (1 + LIMIT_BUFFER_PCT), 2)
-            log.info(f"  {ticker} score={score:.1f} → LIMIT ${limit_price:.2f} qty={qty:.4f}")
-
-        # ATR-based stop: use 8% below price as a safe fallback without needing ohlcv here
-        stop_price = round(price * 0.92, 2)
+            log.info(f"  {ticker} score={score:.1f} → LIMIT ${limit_price:.2f} x {qty} shares, stop ${stop_price:.2f}")
 
         try:
-            order = place_order(ticker, qty, order_type, limit_price, stop_price)
+            order = place_buy_order(ticker, qty, order_type, limit_price)
             order_id = order.get("id", "unknown")
-            log.info(f"  {ticker} order placed: {order_id}")
+            log.info(f"  {ticker} buy order placed: {order_id}")
+
+            # Place stop-loss as a separate GTC sell order
+            try:
+                stop_order = place_stop_order(ticker, qty, stop_price)
+                log.info(f"  {ticker} stop order placed: {stop_order.get('id')}")
+            except Exception as se:
+                log.warning(f"  {ticker} stop order failed (buy still placed): {se}")
 
             log_trade(db, {
                 "ticker":       ticker,
                 "score":        score,
                 "signal":       sig["signal"],
                 "order_type":   order_type,
-                "qty":          round(qty, 6),
+                "qty":          qty,
                 "limit_price":  limit_price,
                 "stop_price":   stop_price,
                 "order_id":     order_id,
@@ -189,7 +210,7 @@ def run_auto_trader() -> None:
                 "score":      score,
                 "signal":     sig["signal"],
                 "order_type": order_type,
-                "qty":        round(qty, 6),
+                "qty":        qty,
                 "status":     "failed",
                 "error":      str(e),
                 "traded_at":  datetime.now(timezone.utc).isoformat(),
