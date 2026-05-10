@@ -70,30 +70,19 @@ def get_latest_price(ticker: str) -> float | None:
         return None
 
 
-def place_buy_order(ticker: str, qty: int, order_type: str, limit_price: float | None) -> dict:
-    """Place a simple buy order (whole shares only, no bracket)."""
+def place_buy_order(ticker: str, qty: int, order_type: str, limit_price: float | None, stop_price: float | None) -> dict:
+    """Place a buy order with an attached stop-loss (OTO bracket)."""
     body = {
         "symbol":        ticker,
         "qty":           str(qty),
         "side":          "buy",
         "type":          order_type,
         "time_in_force": "day",
+        "order_class":   "oto",
+        "stop_loss":     {"stop_price": str(round(stop_price, 2))},
     }
     if order_type == "limit" and limit_price:
         body["limit_price"] = str(round(limit_price, 2))
-    return _post("/orders", body)
-
-
-def place_stop_order(ticker: str, qty: int, stop_price: float) -> dict:
-    """Place a stop-loss sell order for an existing position."""
-    body = {
-        "symbol":        ticker,
-        "qty":           str(qty),
-        "side":          "sell",
-        "type":          "stop",
-        "time_in_force": "gtc",
-        "stop_price":    str(round(stop_price, 2)),
-    }
     return _post("/orders", body)
 
 
@@ -175,16 +164,9 @@ def run_auto_trader() -> None:
             log.info(f"  {ticker} score={score:.1f} → LIMIT ${limit_price:.2f} x {qty} shares, stop ${stop_price:.2f}")
 
         try:
-            order = place_buy_order(ticker, qty, order_type, limit_price)
+            order = place_buy_order(ticker, qty, order_type, limit_price, stop_price)
             order_id = order.get("id", "unknown")
-            log.info(f"  {ticker} buy order placed: {order_id}")
-
-            # Place stop-loss as a separate GTC sell order
-            try:
-                stop_order = place_stop_order(ticker, qty, stop_price)
-                log.info(f"  {ticker} stop order placed: {stop_order.get('id')}")
-            except Exception as se:
-                log.warning(f"  {ticker} stop order failed (buy still placed): {se}")
+            log.info(f"  {ticker} order placed (with stop ${stop_price:.2f}): {order_id}")
 
             log_trade(db, {
                 "ticker":       ticker,
