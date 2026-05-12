@@ -4,10 +4,14 @@ from config import SP500_WIKIPEDIA_URL, SP400_WIKIPEDIA_URL
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; stock-advisor-bot/1.0)"}
 
 
-def _fetch_tickers(url: str, symbol_col: str = "Symbol") -> list[str]:
+def _fetch_tickers(url: str) -> list[str]:
     tables = pd.read_html(url, storage_options=_HEADERS)
     df = tables[0]
-    return [t.replace(".", "-") for t in df[symbol_col].tolist()]
+    # Wikipedia occasionally renames columns — try common variants
+    for col in ("Symbol", "Ticker", "Ticker symbol"):
+        if col in df.columns:
+            return [str(t).replace(".", "-") for t in df[col].tolist()]
+    raise KeyError(f"No ticker column found in {url}. Columns: {list(df.columns)}")
 
 
 def get_sp500_tickers() -> list[str]:
