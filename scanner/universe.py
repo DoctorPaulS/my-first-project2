@@ -6,12 +6,13 @@ _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; stock-advisor-bot/1.0)"}
 
 def _fetch_tickers(url: str) -> list[str]:
     tables = pd.read_html(url, storage_options=_HEADERS)
-    df = tables[0]
-    # Wikipedia occasionally renames columns — try common variants
-    for col in ("Symbol", "Ticker", "Ticker symbol"):
-        if col in df.columns:
-            return [str(t).replace(".", "-") for t in df[col].tolist()]
-    raise KeyError(f"No ticker column found in {url}. Columns: {list(df.columns)}")
+    for df in tables:
+        for col in ("Symbol", "Ticker", "Ticker symbol"):
+            if col in df.columns:
+                return [str(t).replace(".", "-") for t in df[col].tolist()]
+    # Log all table shapes and columns to help debug future breakage
+    col_info = [(i, list(df.columns)[:5]) for i, df in enumerate(tables)]
+    raise KeyError(f"No ticker column found in {url}. Tables found: {col_info}")
 
 
 def get_sp500_tickers() -> list[str]:
