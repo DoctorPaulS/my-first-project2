@@ -3,29 +3,18 @@ import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
 import requests
-from datetime import datetime, timezone
 from config import get_secret
 
 st.set_page_config(page_title="Performance", page_icon="📊", layout="wide")
 st.title("📊 Performance")
-st.caption("Your actual portfolio equity vs S&P 500 (SPY) and Total Market (VTI)")
+st.caption("Invested positions vs S&P 500 (SPY) and Total Market (VTI) — cash excluded, anchored to your entry price")
 
-PERIOD_MAP = {
-    "1 Day":   ("1D", "15Min"),
-    "1 Week":  ("1W", "1D"),
-    "1 Month": ("1M", "1D"),
-    "3 Months":("3M", "1D"),
-    "6 Months":("6M", "1D"),
-    "1 Year":  ("1A", "1D"),
-}
+YF_PERIOD_MAP   = {"1W": "5d",  "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}
+YF_INTERVAL_MAP = {"1W": "1h",  "1M": "1d",  "3M": "1d",  "6M": "1d",  "1Y": "1d"}
 
-YF_PERIOD_MAP   = {"1D": "1d",  "1W": "5d",  "1M": "1mo", "3M": "3mo", "6M": "6mo", "1A": "1y"}
-YF_INTERVAL_MAP = {"1D": "15m", "1W": "1h",  "1M": "1d",  "3M": "1d",  "6M": "1d",  "1A": "1d"}
-
-period_label = st.selectbox("Time Period", list(PERIOD_MAP.keys()), index=2)
-alpaca_period, alpaca_timeframe = PERIOD_MAP[period_label]
-yf_period   = YF_PERIOD_MAP[alpaca_period]
-yf_interval = YF_INTERVAL_MAP[alpaca_period]
+period_label = st.selectbox("Time Period", list(YF_PERIOD_MAP.keys()), index=1)
+yf_period   = YF_PERIOD_MAP[period_label]
+yf_interval = YF_INTERVAL_MAP[period_label]
 
 BASE = "https://paper-api.alpaca.markets/v2"
 
@@ -37,26 +26,38 @@ def _headers() -> dict:
     }
 
 
-def load_portfolio_history(period: str, timeframe: str) -> pd.Series | None:
+def get_positions() -> list[dict]:
+    try:
+        r = requests.get(f"{BASE}/positions", headers=_headers(), timeout=10)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return []
+
+
+def get_filled_orders() -> dict[str, dict]:
+    """Return {ticker: {entry_date, avg_price, qty}} from filled buy orders."""
     try:
         r = requests.get(
-            f"{BASE}/account/portfolio/history",
+            f"{BASE}/orders",
             headers=_headers(),
-            params={"period": period, "timeframe": timeframe},
+            params={"status": "filled", "limit": 100, "direction": "asc"},
             timeout=10,
         )
         r.raise_for_status()
-        data = r.json()
-        timestamps = data.get("timestamp", [])
-        equity     = data.get("equity", [])
-        if not timestamps or not equity:
-            return None
-        series = pd.Series(equity, index=pd.to_datetime(timestamps, unit="s", utc=True))
-        series = series[series > 0].dropna()
-        return series if len(series) >= 2 else None
-    except Exception as e:
-        st.warning(f"Could not load portfolio history: {e}")
-        return None
+        entries = {}
+        for o in r.json():
+            if o.get("side") == "buy" and o.get("filled_at") and o.get("filled_avg_price"):
+                ticker = o["symbol"]
+                if ticker not in entries:
+                    entries[ticker] = {
+                        "entry_date":  pd.Timestamp(o["filled_at"]).tz_localize(None),
+                        "entry_price": float(o["filled_avg_price"]),
+                        "qty":         float(o.get("filled_qty", 0)),
+                    }
+        return entries
+    except Exception:
+        return {}
 
 
 @st.cache_data(ttl=3600)
@@ -64,37 +65,88 @@ def load_benchmarks(yf_period: str, yf_interval: str):
     try:
         spy = yf.download("SPY", period=yf_period, interval=yf_interval, auto_adjust=True, progress=False)["Close"].squeeze()
         vti = yf.download("VTI", period=yf_period, interval=yf_interval, auto_adjust=True, progress=False)["Close"].squeeze()
-    except Exception as e:
-        st.warning(f"Could not load benchmark data: {e}")
+    except Exception:
         spy = pd.Series(dtype=float)
         vti = pd.Series(dtype=float)
     return spy, vti
 
 
-with st.spinner("Loading portfolio history..."):
-    port_series = load_portfolio_history(alpaca_period, alpaca_timeframe)
+def load_invested_performance(yf_period: str, yf_interval: str) -> pd.Series | None:
+    positions = get_positions()
+    if not positions:
+        return None
+
+    filled = get_filled_orders()
+    total_cost = sum(float(p["cost_basis"]) for p in positions)
+    if total_cost == 0:
+        return None
+
+    portfolio_return = None
+
+    for pos in positions:
+        ticker     = pos["symbol"]
+        qty        = float(pos["qty"])
+        cost_basis = float(pos["cost_basis"])
+        weight     = cost_basis / total_cost
+
+        entry_info   = filled.get(ticker, {})
+        entry_price  = entry_info.get("entry_price") or (cost_basis / qty)
+        entry_date   = entry_info.get("entry_date")
+
+        try:
+            prices = yf.download(
+                ticker, period=yf_period, interval=yf_interval,
+                auto_adjust=True, progress=False,
+            )["Close"].squeeze()
+            if prices.empty or len(prices) < 2:
+                continue
+
+            # Strip timezone for consistent comparison
+            idx = prices.index.tz_localize(None) if prices.index.tz else prices.index
+            prices.index = idx
+
+            # Trim to entry date if available and within the period
+            if entry_date is not None and entry_date > idx[0]:
+                prices = prices[idx >= entry_date]
+            if len(prices) < 2:
+                continue
+
+            # Weighted return series: (price / entry_price - 1) * weight
+            ret = (prices / entry_price - 1) * weight
+            portfolio_return = ret if portfolio_return is None else portfolio_return.add(ret, fill_value=0)
+
+        except Exception:
+            continue
+
+    return portfolio_return
+
+
+with st.spinner("Loading position performance..."):
+    port_return = load_invested_performance(yf_period, yf_interval)
 
 spy, vti = load_benchmarks(yf_period, yf_interval)
 
 fig = go.Figure()
+port_for_stats = None
 
-port_series_for_stats = None
-if port_series is not None and len(port_series) >= 2:
-    port_norm = port_series / port_series.iloc[0] * 100
-    port_series_for_stats = port_series
+if port_return is not None and len(port_return.dropna()) >= 2:
+    port_clean = port_return.dropna()
+    # Convert weighted return to indexed (100 = entry)
+    port_norm = 100 + port_clean * 100
+    port_for_stats = port_norm
     fig.add_trace(go.Scatter(
         x=port_norm.index, y=port_norm,
-        name="My Portfolio",
+        name="My Positions",
         line=dict(color="#00D4AA", width=2),
     ))
 else:
-    st.info("No trading activity yet — equity curve will appear once positions have been opened and closed or marked to market.")
+    st.info("No open positions found — performance will appear once your Alpaca account has filled orders.")
 
-# Align benchmarks to portfolio start date (strip tz for comparison with yfinance naive index)
-bench_start = port_series.index[0].tz_localize(None) if port_series is not None else None
+bench_start = port_return.dropna().index[0] if port_return is not None and len(port_return.dropna()) >= 1 else None
 
 if not spy.empty:
     spy_idx = spy.index.tz_localize(None) if spy.index.tz else spy.index
+    spy.index = spy_idx
     spy_plot = spy[spy_idx >= bench_start] if bench_start else spy
     if not spy_plot.empty:
         spy_norm = spy_plot / spy_plot.iloc[0] * 100
@@ -103,14 +155,16 @@ if not spy.empty:
 
 if not vti.empty:
     vti_idx = vti.index.tz_localize(None) if vti.index.tz else vti.index
+    vti.index = vti_idx
     vti_plot = vti[vti_idx >= bench_start] if bench_start else vti
     if not vti_plot.empty:
         vti_norm = vti_plot / vti_plot.iloc[0] * 100
         fig.add_trace(go.Scatter(x=vti_norm.index, y=vti_norm, name="VTI (Total Market)",
                                  line=dict(color="#F5A623", width=2, dash="dot")))
 
+fig.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
 fig.update_layout(
-    yaxis_title="Growth (base = 100)",
+    yaxis_title="Growth (base = 100 at entry)",
     height=450,
     legend=dict(orientation="h", yanchor="bottom", y=1.02),
     margin=dict(l=0, r=0, t=30, b=0),
@@ -136,8 +190,29 @@ def calc_stats(series: pd.Series | None) -> dict:
 
 st.subheader("Summary")
 stats = {
-    "My Portfolio": calc_stats(port_series_for_stats),
+    "My Positions": calc_stats(port_for_stats),
     "SPY":          calc_stats(spy.reset_index(drop=True) if not spy.empty else None),
     "VTI":          calc_stats(vti.reset_index(drop=True) if not vti.empty else None),
 }
 st.dataframe(pd.DataFrame(stats), use_container_width=True)
+
+# --- Position breakdown ---
+positions = get_positions()
+if positions:
+    st.subheader("Position Breakdown")
+    rows = []
+    for p in positions:
+        qty        = float(p["qty"])
+        cost_basis = float(p["cost_basis"])
+        mkt_value  = float(p["market_value"])
+        entry_price = cost_basis / qty
+        rows.append({
+            "Ticker":      p["symbol"],
+            "Qty":         int(qty),
+            "Entry $":     f"${entry_price:.2f}",
+            "Current $":   f"${float(p['current_price']):.2f}",
+            "Market Value":f"${mkt_value:,.0f}",
+            "Return":      f"{float(p['unrealized_plpc'])*100:+.1f}%",
+            "P&L $":       f"${float(p['unrealized_pl']):+,.0f}",
+        })
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
