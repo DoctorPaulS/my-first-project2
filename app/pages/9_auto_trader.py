@@ -101,8 +101,12 @@ if manual_hist and auto_hist:
     def _add_trace(hist, name, color):
         ts  = [datetime.fromtimestamp(t, tz=timezone.utc) for t in hist["timestamp"]]
         eq  = hist["equity"]
-        base = eq[0] if eq[0] else 1
-        pct  = [(v / base - 1) * 100 if base else 0 for v in eq]
+        # Use first non-zero equity as base to avoid division by near-zero
+        nonzero = [v for v in eq if v and v > 0]
+        if not nonzero:
+            return
+        base = nonzero[0]
+        pct  = [(v / base - 1) * 100 if v else None for v in eq]
         fig.add_trace(go.Scatter(x=ts, y=pct, name=name, line=dict(color=color, width=2)))
 
     _add_trace(manual_hist, "👤 You", "#4FC3F7")
