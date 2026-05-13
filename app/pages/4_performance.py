@@ -100,18 +100,20 @@ if port_series is not None and len(port_series) >= 2:
 else:
     st.info("No trading activity yet — equity curve will appear once positions have been opened and closed or marked to market.")
 
-# Align benchmarks to portfolio start date
-bench_start = port_series.index[0] if port_series is not None else None
+# Align benchmarks to portfolio start date (strip tz for comparison with yfinance naive index)
+bench_start = port_series.index[0].tz_localize(None) if port_series is not None else None
 
 if not spy.empty:
-    spy_plot = spy[spy.index >= bench_start] if bench_start else spy
+    spy_idx = spy.index.tz_localize(None) if spy.index.tz else spy.index
+    spy_plot = spy[spy_idx >= bench_start] if bench_start else spy
     if not spy_plot.empty:
         spy_norm = spy_plot / spy_plot.iloc[0] * 100
         fig.add_trace(go.Scatter(x=spy_norm.index, y=spy_norm, name="SPY (S&P 500)",
                                  line=dict(color="#4A90D9", width=2, dash="dash")))
 
 if not vti.empty:
-    vti_plot = vti[vti.index >= bench_start] if bench_start else vti
+    vti_idx = vti.index.tz_localize(None) if vti.index.tz else vti.index
+    vti_plot = vti[vti_idx >= bench_start] if bench_start else vti
     if not vti_plot.empty:
         vti_norm = vti_plot / vti_plot.iloc[0] * 100
         fig.add_trace(go.Scatter(x=vti_norm.index, y=vti_norm, name="VTI (Total Market)",
