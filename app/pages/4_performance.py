@@ -9,10 +9,10 @@ st.set_page_config(page_title="Performance", page_icon="📊", layout="wide")
 st.title("📊 Performance")
 st.caption("Invested positions vs S&P 500 (SPY) and Total Market (VTI) — cash excluded, anchored to your entry price")
 
-YF_PERIOD_MAP   = {"1W": "5d",  "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}
-YF_INTERVAL_MAP = {"1W": "1h",  "1M": "1d",  "3M": "1d",  "6M": "1d",  "1Y": "1d"}
+YF_PERIOD_MAP   = {"1D": "1d",  "1W": "5d",  "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}
+YF_INTERVAL_MAP = {"1D": "15m", "1W": "1h",  "1M": "1d",  "3M": "1d",  "6M": "1d",  "1Y": "1d"}
 
-period_label = st.selectbox("Time Period", list(YF_PERIOD_MAP.keys()), index=1)
+period_label = st.selectbox("Time Period", list(YF_PERIOD_MAP.keys()), index=2)
 yf_period   = YF_PERIOD_MAP[period_label]
 yf_interval = YF_INTERVAL_MAP[period_label]
 
@@ -105,14 +105,19 @@ def load_invested_performance(yf_period: str, yf_interval: str) -> pd.Series | N
             idx = prices.index.tz_localize(None) if prices.index.tz else prices.index
             prices.index = idx
 
-            # Trim to entry date if available and within the period
-            if entry_date is not None and entry_date > idx[0]:
-                prices = prices[idx >= entry_date]
-            if len(prices) < 2:
-                continue
+            # For intraday (1D), normalize from market open instead of entry date
+            if yf_period == "1d":
+                anchor = float(prices.iloc[0])
+            else:
+                # Trim to entry date if available and within the period
+                if entry_date is not None and entry_date > idx[0]:
+                    prices = prices[idx >= entry_date]
+                if len(prices) < 2:
+                    continue
+                anchor = entry_price
 
-            # Weighted return series: (price / entry_price - 1) * weight
-            ret = (prices / entry_price - 1) * weight
+            # Weighted return series: (price / anchor - 1) * weight
+            ret = (prices / anchor - 1) * weight
             portfolio_return = ret if portfolio_return is None else portfolio_return.add(ret, fill_value=0)
 
         except Exception:
