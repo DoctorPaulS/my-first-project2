@@ -1,6 +1,6 @@
 import streamlit as st
 from supabase import create_client
-from config import get_secret, SIGNAL_EMOJI
+from config import get_secret, utc_to_et, SIGNAL_EMOJI
 
 st.set_page_config(page_title="Alerts", page_icon="🔔", layout="wide")
 st.title("🔔 Alerts")
@@ -42,14 +42,14 @@ with col_clear:
 
 def render_alert(alert: dict):
     alert_type = alert.get("alert_type", "signal")
-    created = alert["created_at"][:16].replace("T", " ")
+    created = utc_to_et(alert["created_at"])
 
     col_msg, col_read = st.columns([5, 1])
     with col_msg:
         if alert_type == "price_target":
             st.markdown(
                 f"{alert['message']}  \n"
-                f"<span style='color:gray;font-size:0.85em'>{created} UTC</span>",
+                f"<span style='color:gray;font-size:0.85em'>{created}</span>",
                 unsafe_allow_html=True,
             )
         else:
@@ -59,7 +59,7 @@ def render_alert(alert: dict):
             new_emoji  = SIGNAL_EMOJI.get(new, "")
             st.markdown(
                 f"**{alert['ticker']}** — {prev_emoji} {prev} → {new_emoji} {new}  \n"
-                f"<span style='color:gray;font-size:0.85em'>{created} UTC</span>",
+                f"<span style='color:gray;font-size:0.85em'>{created}</span>",
                 unsafe_allow_html=True,
             )
     with col_read:

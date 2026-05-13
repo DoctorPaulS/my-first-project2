@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from supabase import create_client
-from config import get_secret, MAX_WATCHLIST_SIZE, SP500_WIKIPEDIA_URL, SP400_WIKIPEDIA_URL
+from config import get_secret, utc_to_et, MAX_WATCHLIST_SIZE, SP500_WIKIPEDIA_URL, SP400_WIKIPEDIA_URL
 from scanner.data_fetcher import fetch_ohlcv
 from scanner.exit_targets import calc_exit_targets
 from scanner.ai_summary import generate_ai_summary, fetch_headlines
@@ -63,8 +63,8 @@ if df.empty:
     st.info("No momentum results yet. The scan runs every Monday at 6am ET — you can also trigger it manually from GitHub Actions.")
     st.stop()
 
-scan_time = df["scanned_at"].iloc[0][:16].replace("T", " ")
-st.caption(f"Last scan: {scan_time} UTC  —  {len(df)} candidates found")
+scan_time = utc_to_et(df["scanned_at"].iloc[0])
+st.caption(f"Last scan: {scan_time}  —  {len(df)} candidates found")
 
 # --- Sidebar filters ---
 with st.sidebar:

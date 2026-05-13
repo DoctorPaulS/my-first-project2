@@ -5,7 +5,7 @@ import yfinance as yf
 import requests
 from datetime import datetime, timezone
 from supabase import create_client
-from config import get_secret
+from config import get_secret, utc_to_et
 
 st.set_page_config(page_title="Auto Trader", page_icon="🤖", layout="wide")
 st.title("🤖 Auto Trader")
@@ -259,7 +259,7 @@ trades = db.table("auto_trades").select("*").order("traded_at", desc=True).limit
 
 if trades.data:
     df = pd.DataFrame(trades.data)
-    df["traded_at"] = df["traded_at"].str[:16].str.replace("T", " ")
+    df["traded_at"] = df["traded_at"].apply(utc_to_et)
     display_cols = ["traded_at", "ticker", "score", "order_type", "qty", "limit_price", "stop_price", "status", "error"]
     display_cols = [c for c in display_cols if c in df.columns]
     df = df[display_cols].rename(columns={

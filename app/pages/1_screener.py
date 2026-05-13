@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from supabase import create_client
-from config import get_secret, MAX_WATCHLIST_SIZE, SP500_WIKIPEDIA_URL, SP400_WIKIPEDIA_URL
+from config import get_secret, utc_to_et, MAX_WATCHLIST_SIZE, SP500_WIKIPEDIA_URL, SP400_WIKIPEDIA_URL
 from scorer import format_signal
 from scanner.data_fetcher import fetch_ohlcv
 from scanner.exit_targets import calc_exit_targets
@@ -71,7 +71,7 @@ if df.empty:
     st.warning("No scan results yet. The scanner runs every 2 hours during market hours.")
     st.stop()
 
-scan_time = df["scanned_at"].iloc[0] if "scanned_at" in df.columns else "unknown"
+scan_time = utc_to_et(df["scanned_at"].iloc[0]) if "scanned_at" in df.columns else "unknown"
 st.caption(f"Last scan: {scan_time}")
 
 # --- Sidebar filters ---

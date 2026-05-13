@@ -40,6 +40,20 @@ ALERTS_EXPIRE_DAYS = 7
 PORTFOLIO_CACHE_SECONDS = 60
 
 
+def utc_to_et(utc_str: str) -> str:
+    """Convert an ISO UTC timestamp string to ET display string (e.g. '2026-05-13 09:35 ET')."""
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    try:
+        dt = datetime.fromisoformat(utc_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        et = dt.astimezone(ZoneInfo("America/New_York"))
+        return et.strftime("%Y-%m-%d %H:%M ET")
+    except Exception:
+        return utc_str[:16].replace("T", " ")
+
+
 def get_secret(key: str) -> str:
     """Get a secret from Streamlit secrets (in app) or environment variables (in scanner)."""
     try:
