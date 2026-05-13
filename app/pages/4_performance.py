@@ -42,7 +42,7 @@ def load_portfolio_history(period: str, timeframe: str) -> pd.Series | None:
         r = requests.get(
             f"{BASE}/account/portfolio/history",
             headers=_headers(),
-            params={"period": period, "timeframe": timeframe, "intraday_reporting": "market_hours"},
+            params={"period": period, "timeframe": timeframe},
             timeout=10,
         )
         r.raise_for_status()
@@ -51,19 +51,9 @@ def load_portfolio_history(period: str, timeframe: str) -> pd.Series | None:
         equity     = data.get("equity", [])
         if not timestamps or not equity:
             return None
-        series = pd.Series(
-            equity,
-            index=pd.to_datetime(timestamps, unit="s", utc=True),
-        )
-        # Drop flat leading zeros (account existed but no activity)
-        first_nonzero = series[series > 0].first_valid_index()
-        if first_nonzero:
-            series = series[first_nonzero:]
-        # Find first point where equity actually changed (exclude flat cash period)
-        changed = series[series != series.iloc[0]].first_valid_index()
-        if changed:
-            series = series[changed:]
-        return series.dropna() if len(series) >= 2 else None
+        series = pd.Series(equity, index=pd.to_datetime(timestamps, unit="s", utc=True))
+        series = series[series > 0].dropna()
+        return series if len(series) >= 2 else None
     except Exception as e:
         st.warning(f"Could not load portfolio history: {e}")
         return None
