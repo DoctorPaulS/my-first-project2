@@ -10,6 +10,12 @@ jobs:
   auto-trade:
     runs-on: ubuntu-latest
 
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      ALPACA_AUTO_API_KEY: ${{ secrets.ALPACA_AUTO_API_KEY }}
+      ALPACA_AUTO_SECRET_KEY: ${{ secrets.ALPACA_AUTO_SECRET_KEY }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,10 +29,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Run exit manager
+        run: python -m scanner.exit_manager
+
       - name: Run auto trader
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          ALPACA_AUTO_API_KEY: ${{ secrets.ALPACA_AUTO_API_KEY }}
-          ALPACA_AUTO_SECRET_KEY: ${{ secrets.ALPACA_AUTO_SECRET_KEY }}
         run: python -m scanner.auto_trader
