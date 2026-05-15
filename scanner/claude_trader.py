@@ -40,21 +40,33 @@ def _headers() -> dict:
     }
 
 
-def _get(path: str, params: dict = None):
-    r = requests.get(f"{BASE}{path}", headers=_headers(), params=params, timeout=10)
-    r.raise_for_status()
-    return r.json()
+def _get(path: str, params: dict = None, retries: int = 3):
+    for attempt in range(retries):
+        try:
+            r = requests.get(f"{BASE}{path}", headers=_headers(), params=params, timeout=30)
+            r.raise_for_status()
+            return r.json()
+        except requests.exceptions.Timeout:
+            if attempt == retries - 1:
+                raise
+            log.warning(f"Timeout on GET {path}, retrying ({attempt+1}/{retries})...")
 
 
-def _post(path: str, body: dict) -> dict:
-    r = requests.post(f"{BASE}{path}", headers=_headers(), json=body, timeout=10)
-    if not r.ok:
-        raise Exception(f"{r.status_code}: {r.text}")
-    return r.json()
+def _post(path: str, body: dict, retries: int = 3) -> dict:
+    for attempt in range(retries):
+        try:
+            r = requests.post(f"{BASE}{path}", headers=_headers(), json=body, timeout=30)
+            if not r.ok:
+                raise Exception(f"{r.status_code}: {r.text}")
+            return r.json()
+        except requests.exceptions.Timeout:
+            if attempt == retries - 1:
+                raise
+            log.warning(f"Timeout on POST {path}, retrying ({attempt+1}/{retries})...")
 
 
 def _delete(path: str) -> None:
-    r = requests.delete(f"{BASE}{path}", headers=_headers(), timeout=10)
+    r = requests.delete(f"{BASE}{path}", headers=_headers(), timeout=30)
     if not r.ok:
         raise Exception(f"{r.status_code}: {r.text}")
 

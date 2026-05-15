@@ -40,17 +40,29 @@ def _headers() -> dict:
     }
 
 
-def _get(path: str, params: dict = None) -> dict | list:
-    r = requests.get(f"{_base_url()}{path}", headers=_headers(), params=params)
-    r.raise_for_status()
-    return r.json()
+def _get(path: str, params: dict = None, retries: int = 3) -> dict | list:
+    for attempt in range(retries):
+        try:
+            r = requests.get(f"{_base_url()}{path}", headers=_headers(), params=params, timeout=30)
+            r.raise_for_status()
+            return r.json()
+        except requests.exceptions.Timeout:
+            if attempt == retries - 1:
+                raise
+            log.warning(f"Timeout on GET {path}, retrying ({attempt+1}/{retries})...")
 
 
-def _post(path: str, body: dict) -> dict:
-    r = requests.post(f"{_base_url()}{path}", headers=_headers(), json=body)
-    if not r.ok:
-        raise requests.HTTPError(f"{r.status_code} {r.reason}: {r.text}", response=r)
-    return r.json()
+def _post(path: str, body: dict, retries: int = 3) -> dict:
+    for attempt in range(retries):
+        try:
+            r = requests.post(f"{_base_url()}{path}", headers=_headers(), json=body, timeout=30)
+            if not r.ok:
+                raise requests.HTTPError(f"{r.status_code} {r.reason}: {r.text}", response=r)
+            return r.json()
+        except requests.exceptions.Timeout:
+            if attempt == retries - 1:
+                raise
+            log.warning(f"Timeout on POST {path}, retrying ({attempt+1}/{retries})...")
 
 
 def get_account() -> dict:
@@ -84,6 +96,8 @@ def calc_atr_stop(ticker: str, price: float) -> float:
 
 def get_sector_exposure(positions: list[dict], portfolio_value: float) -> dict[str, float]:
     """Return {sector: market_value_fraction} for current positions."""
+    if not positions or portfolio_value == 0:
+        return {}
     exposure: dict[str, float] = {}
     for p in positions:
         sector = get_sector(p["symbol"])
@@ -153,6 +167,10 @@ def run_auto_trader() -> None:
     portfolio_value = float(account["portfolio_value"])
     buying_power    = float(account["buying_power"])
     log.info(f"Portfolio: ${portfolio_value:,.2f} | Buying power: ${buying_power:,.2f}")
+
+    if portfolio_value == 0:
+        log.error("Portfolio value is $0 — account may not be funded or keys are incorrect. Aborting.")
+        return
 
     positions = get_positions()
     existing_tickers = {p["symbol"] for p in positions}
