@@ -7,7 +7,7 @@ from config import get_secret
 
 st.set_page_config(page_title="Performance", page_icon="📊", layout="wide")
 st.title("📊 Performance")
-st.caption("Invested positions vs S&P 500 (SPY) and Total Market (VTI) — cash excluded, anchored to your entry price")
+st.caption("Chart shows position performance over the selected period. All-time P&L since entry is shown in the header above.")
 
 YF_PERIOD_MAP   = {"1D": "1d",  "1W": "5d",  "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}
 YF_INTERVAL_MAP = {"1D": "15m", "1W": "1h",  "1M": "1d",  "3M": "1d",  "6M": "1d",  "1Y": "1d"}
@@ -108,16 +108,20 @@ def load_invested_performance(yf_period: str, yf_interval: str) -> pd.Series | N
             idx = prices.index.tz_localize(None) if prices.index.tz else prices.index
             prices.index = idx
 
-            # For intraday (1D), normalize from market open instead of entry date
+            # Determine anchor point for this position
             if yf_period == "1d":
+                # Intraday: always anchor to today's open
                 anchor = float(prices.iloc[0])
-            else:
-                # Trim to entry date if available and within the period
-                if entry_date is not None and entry_date > idx[0]:
-                    prices = prices[idx >= entry_date]
+            elif entry_date is not None and entry_date > idx[0]:
+                # Entered within this period: trim to entry date and use fill price
+                prices = prices[idx >= entry_date]
                 if len(prices) < 2:
                     continue
                 anchor = entry_price
+            else:
+                # Entered before this period: anchor to first bar in window
+                # (shows how positions have moved during the selected period)
+                anchor = float(prices.iloc[0])
 
             # Weighted return series: (price / anchor - 1) * weight
             ret = (prices / anchor - 1) * weight
