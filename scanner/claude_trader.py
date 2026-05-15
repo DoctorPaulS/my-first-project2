@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from db.client import get_db
 from config import get_secret
 from scanner.ai_summary import fetch_headlines
+from scanner.exit_targets import calc_exit_targets
+from scanner.data_fetcher import fetch_ohlcv
 
 logging.basicConfig(
     level=logging.INFO,
@@ -118,6 +120,18 @@ def _place_gtc_stop(ticker: str, qty: int, stop_price: float) -> dict:
         "time_in_force": "gtc",
         "stop_price":    str(round(stop_price, 2)),
     })
+
+
+def _calc_atr_stop(ticker: str, price: float) -> float:
+    """ATR-based stop at 1.5×ATR below price, clamped to 5–15% range."""
+    try:
+        ohlcv = fetch_ohlcv(ticker, period="1y")
+        stop  = calc_exit_targets(ohlcv)["stop"]
+        stop  = max(stop, price * 0.85)   # never more than 15% below
+        stop  = min(stop, price * 0.95)   # never less than 5% below
+        return round(stop, 2)
+    except Exception:
+        return round(price * 0.92, 2)     # fallback: 8%
 
 
 _sector_cache: dict[str, str] = {}
@@ -392,7 +406,7 @@ def _execute_decisions(decisions_response: dict, account: dict,
 
                 # OTO bracket: limit buy + attached stop (avoids wash-trade 403)
                 limit_price = round(price * 1.005, 2)
-                stop_price  = round(price * 0.92, 2)
+                stop_price  = _calc_atr_stop(ticker, price)
                 _place_buy_oto(ticker, qty, limit_price, stop_price)
                 log.info(f"  BUY {ticker} {qty} shares @ limit ${limit_price:.2f}, stop ${stop_price:.2f} — {reason}")
 
