@@ -192,18 +192,25 @@ yf_period   = YF_PERIOD_MAP[period_label]
 yf_interval = YF_INTERVAL_MAP[period_label]
 alp_period, alp_timeframe = ALP_PERIOD_MAP[period_label]
 
+def _to_et(s: pd.Series) -> pd.Series:
+    idx = pd.DatetimeIndex(s.index)
+    if idx.tz is None:
+        idx = idx.tz_localize("UTC")
+    return s.set_axis(idx.tz_convert("America/New_York"))
+
+
 fig = go.Figure()
 
 if view == "Invested positions only":
     with st.spinner("Loading position performance..."):
-        m_ret = _invested_performance(_manual_headers(), yf_period, yf_interval)
-        a_ret = _invested_performance(_auto_headers(),   yf_period, yf_interval)
+        m_ret  = _invested_performance(_manual_headers(), yf_period, yf_interval)
+        a_ret  = _invested_performance(_auto_headers(),   yf_period, yf_interval)
         cl_ret = _invested_performance(_claude_headers(), yf_period, yf_interval)
 
     def _add_invested(ret, name, color):
         if ret is None or len(ret.dropna()) < 2:
             return
-        s = ret.dropna()
+        s = _to_et(ret.dropna())
         fig.add_trace(go.Scatter(x=s.index, y=s * 100, name=name, line=dict(color=color, width=2)))
 
     _add_invested(m_ret,  "👤 You",        "#4FC3F7")
@@ -219,7 +226,9 @@ else:
     def _add_total(hist, name, color):
         if not hist:
             return
-        ts  = [datetime.fromtimestamp(t, tz=timezone.utc) for t in hist["timestamp"]]
+        from zoneinfo import ZoneInfo
+        ET = ZoneInfo("America/New_York")
+        ts  = [datetime.fromtimestamp(t, tz=timezone.utc).astimezone(ET) for t in hist["timestamp"]]
         eq  = hist["equity"]
         nonzero = [v for v in eq if v and v > 0]
         if not nonzero:
