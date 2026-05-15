@@ -1,8 +1,24 @@
 import streamlit as st
 import pandas as pd
+import yfinance as yf
 from supabase import create_client
 from config import get_secret, SIGNAL_EMOJI
 from alpaca_client import get_positions, get_account
+
+SECTOR_WARN_PCT = 40  # warn if any sector exceeds this % of invested capital
+
+
+@st.cache_data(ttl=86400)
+def get_sectors(tickers: tuple) -> dict[str, str]:
+    """Return {ticker: sector} via yfinance. Cached for 24h."""
+    result = {}
+    for t in tickers:
+        try:
+            info = yf.Ticker(t).info
+            result[t] = info.get("sector") or "Unknown"
+        except Exception:
+            result[t] = "Unknown"
+    return result
 
 _url = get_secret("SUPABASE_URL")
 _key = get_secret("SUPABASE_KEY")
@@ -93,6 +109,41 @@ event = st.dataframe(
         "Score":        st.column_config.NumberColumn("Score", format="%.1f"),
     },
 )
+
+# --- Sector concentration ---
+st.divider()
+st.subheader("Sector Concentration")
+with st.spinner("Loading sector data..."):
+    sectors = get_sectors(tuple(tickers))
+
+total_invested = sum(float(p["market_value"]) for p in positions)
+sector_values: dict[str, float] = {}
+for p in positions:
+    s = sectors.get(p["symbol"], "Unknown")
+    sector_values[s] = sector_values.get(s, 0) + float(p["market_value"])
+
+sector_rows = sorted(
+    [{"Sector": s, "Value": v, "Pct": v / total_invested * 100}
+     for s, v in sector_values.items()],
+    key=lambda x: x["Pct"], reverse=True,
+)
+
+for r in sector_rows:
+    if r["Pct"] >= SECTOR_WARN_PCT:
+        st.warning(f"⚠️ **{r['Sector']}** is {r['Pct']:.1f}% of invested capital — consider diversifying")
+
+sector_df = pd.DataFrame(sector_rows)
+st.dataframe(
+    sector_df,
+    hide_index=True,
+    use_container_width=True,
+    column_config={
+        "Value": st.column_config.NumberColumn("Value", format="$%,.2f"),
+        "Pct":   st.column_config.NumberColumn("% of Portfolio", format="%.1f%%"),
+    },
+)
+
+st.divider()
 
 if event.selection.rows:
     idx = event.selection.rows[0]
