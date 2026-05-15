@@ -74,15 +74,17 @@ def load_benchmarks(yf_period: str, yf_interval: str):
     return spy, vti
 
 
-def load_invested_performance(yf_period: str, yf_interval: str) -> pd.Series | None:
-    positions = get_positions()
+def load_invested_performance(yf_period: str, yf_interval: str,
+                              positions: list[dict], filled: dict) -> pd.Series | None:
     if not positions:
         return None
 
-    filled = get_filled_orders()
     total_cost = sum(float(p["cost_basis"]) for p in positions)
     if total_cost == 0:
         return None
+
+    # Build a map of Alpaca's real-time prices per ticker
+    live_prices = {p["symbol"]: float(p["current_price"]) for p in positions}
 
     portfolio_return = None
 
@@ -92,9 +94,9 @@ def load_invested_performance(yf_period: str, yf_interval: str) -> pd.Series | N
         cost_basis = float(pos["cost_basis"])
         weight     = cost_basis / total_cost
 
-        entry_info   = filled.get(ticker, {})
-        entry_price  = entry_info.get("entry_price") or (cost_basis / qty)
-        entry_date   = entry_info.get("entry_date")
+        entry_info  = filled.get(ticker, {})
+        entry_price = entry_info.get("entry_price") or (cost_basis / qty)
+        entry_date  = entry_info.get("entry_date")
 
         try:
             prices = yf.download(
@@ -108,22 +110,22 @@ def load_invested_performance(yf_period: str, yf_interval: str) -> pd.Series | N
             idx = prices.index.tz_localize(None) if prices.index.tz else prices.index
             prices.index = idx
 
+            # Override the last bar with Alpaca's real-time price so the
+            # chart endpoint always matches the live P&L header
+            if ticker in live_prices:
+                prices.iloc[-1] = live_prices[ticker]
+
             # Determine anchor point for this position
             if yf_period == "1d":
-                # Intraday: always anchor to today's open
                 anchor = float(prices.iloc[0])
             elif entry_date is not None and entry_date > idx[0]:
-                # Entered within this period: trim to entry date and use fill price
                 prices = prices[idx >= entry_date]
                 if len(prices) < 2:
                     continue
                 anchor = entry_price
             else:
-                # Entered before this period: anchor to first bar in window
-                # (shows how positions have moved during the selected period)
                 anchor = float(prices.iloc[0])
 
-            # Weighted return series: (price / anchor - 1) * weight
             ret = (prices / anchor - 1) * weight
             portfolio_return = ret if portfolio_return is None else portfolio_return.add(ret, fill_value=0)
 
@@ -148,7 +150,9 @@ if _live_positions:
     st.divider()
 
 with st.spinner("Loading position performance..."):
-    port_return = load_invested_performance(yf_period, yf_interval)
+    _positions_for_chart = get_positions()
+    _filled_for_chart    = get_filled_orders()
+    port_return = load_invested_performance(yf_period, yf_interval, _positions_for_chart, _filled_for_chart)
 
 spy, vti = load_benchmarks(yf_period, yf_interval)
 
