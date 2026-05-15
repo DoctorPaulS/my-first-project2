@@ -66,18 +66,33 @@ for p in positions:
     emoji = SIGNAL_EMOJI.get(signal, "")
     pl_pct = p["unrealized_plpc"] * 100
     rows.append({
-        "Ticker": p["symbol"],
-        "Shares": p["qty"],
-        "Price": f"${p['current_price']:,.2f}",
-        "Market Value": f"${p['market_value']:,.2f}",
-        "Gain/Loss": f"${p['unrealized_pl']:+,.2f} ({pl_pct:+.1f}%)",
-        "Signal": f"{emoji} {signal}",
-        "Score": sig_data.get("score", "—"),
+        "Ticker":       p["symbol"],
+        "Shares":       float(p["qty"]),
+        "Price":        float(p["current_price"]),
+        "Market Value": float(p["market_value"]),
+        "P&L $":        float(p["unrealized_pl"]),
+        "P&L %":        pl_pct,
+        "Signal":       f"{emoji} {signal}",
+        "Score":        float(sig_data["score"]) if sig_data.get("score") not in (None, "—") else None,
     })
 
 st.subheader(f"{len(rows)} open positions")
 df = pd.DataFrame(rows)
-event = st.dataframe(df, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
+event = st.dataframe(
+    df,
+    use_container_width=True,
+    hide_index=True,
+    on_select="rerun",
+    selection_mode="single-row",
+    column_config={
+        "Shares":       st.column_config.NumberColumn("Shares", format="%.0f"),
+        "Price":        st.column_config.NumberColumn("Price", format="$%.2f"),
+        "Market Value": st.column_config.NumberColumn("Market Value", format="$%,.0f"),
+        "P&L $":        st.column_config.NumberColumn("P&L $", format="$%+,.2f"),
+        "P&L %":        st.column_config.NumberColumn("P&L %", format="%+.2f%%"),
+        "Score":        st.column_config.NumberColumn("Score", format="%.1f"),
+    },
+)
 
 if event.selection.rows:
     idx = event.selection.rows[0]
