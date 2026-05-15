@@ -10,6 +10,7 @@ import json
 import logging
 import requests
 import anthropic
+import yfinance as yf
 from datetime import datetime, timezone
 from db.client import get_db
 from config import get_secret
@@ -25,6 +26,7 @@ log = logging.getLogger(__name__)
 BASE             = "https://paper-api.alpaca.markets/v2"
 MAX_POSITION_PCT = 0.20   # Hard cap: no single position > 20% of portfolio
 MIN_CASH_RESERVE = 0.10   # Keep at least 10% cash at all times
+MAX_SECTOR_PCT   = 0.40   # No single sector > 40% of portfolio
 BUY_CANDIDATE_MIN_SCORE = 60  # Only show Claude candidates above this score
 MAX_CANDIDATES   = 15     # Cap buy candidates to avoid huge prompts
 
@@ -116,6 +118,17 @@ def _place_gtc_stop(ticker: str, qty: int, stop_price: float) -> dict:
         "time_in_force": "gtc",
         "stop_price":    str(round(stop_price, 2)),
     })
+
+
+_sector_cache: dict[str, str] = {}
+
+def _get_sector(ticker: str) -> str:
+    if ticker not in _sector_cache:
+        try:
+            _sector_cache[ticker] = yf.Ticker(ticker).info.get("sector") or "Unknown"
+        except Exception:
+            _sector_cache[ticker] = "Unknown"
+    return _sector_cache[ticker]
 
 
 def _get_scan_signals(db) -> dict:
@@ -213,10 +226,24 @@ def _build_context(account: dict, positions: list, signals: dict,
 
     candidates_block = "\n".join(cand_lines) if cand_lines else "  No strong candidates."
 
+    # --- Sector exposure block ---
+    sector_values: dict[str, float] = {}
+    for p in positions:
+        sector = _get_sector(p["symbol"])
+        sector_values[sector] = sector_values.get(sector, 0.0) + float(p["market_value"])
+    sector_lines = [
+        f"  {s}: {v/portfolio_value*100:.1f}%{' ⚠ NEAR LIMIT' if v/portfolio_value >= 0.35 else ''}"
+        for s, v in sorted(sector_values.items(), key=lambda x: x[1], reverse=True)
+    ] if sector_values else ["  No positions yet."]
+    sector_block = "\n".join(sector_lines)
+
     return f"""PORTFOLIO STATE — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
 Portfolio Value: ${portfolio_value:,.2f}
 Cash: ${cash:,.2f} ({cash_pct:.1f}%)
 Buying Power: ${buying_power:,.2f}
+
+SECTOR EXPOSURE (max {MAX_SECTOR_PCT*100:.0f}% per sector):
+{sector_block}
 
 CURRENT POSITIONS ({len(positions)}):
 {positions_block}
@@ -261,6 +288,7 @@ Respond ONLY with a valid JSON object in this exact format:
 
 Hard rules you must follow:
 - No single position > 20% of total portfolio value
+- No single sector > 40% of total portfolio value — check the SECTOR EXPOSURE block before buying
 - Keep at least 10% cash reserve at all times
 - Only include tickers you want to ACT on (buy/sell/trim) — omit holds
 - allocation_pct for buys = % of total portfolio value to deploy

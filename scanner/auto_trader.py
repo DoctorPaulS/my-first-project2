@@ -8,6 +8,7 @@ Run with: python -m scanner.auto_trader
 import sys
 import logging
 import requests
+import yfinance as yf
 from datetime import datetime, timezone
 from db.client import get_db
 from config import get_secret
@@ -23,6 +24,7 @@ HIGH_CONVICTION_SCORE = 85
 POSITION_SIZE_PCT     = 0.05   # 5% of portfolio per trade
 LIMIT_BUFFER_PCT      = 0.005  # limit price = last price + 0.5%
 BUY_SIGNALS           = {"BUY"}
+MAX_SECTOR_PCT        = 0.40   # no single sector > 40% of portfolio
 
 
 def _base_url() -> str:
@@ -53,9 +55,26 @@ def get_account() -> dict:
     return _get("/account")
 
 
-def get_positions() -> set[str]:
-    positions = _get("/positions")
-    return {p["symbol"] for p in positions}
+def get_positions() -> list[dict]:
+    return _get("/positions")
+
+
+def get_sector(ticker: str, _cache: dict = {}) -> str:
+    if ticker not in _cache:
+        try:
+            _cache[ticker] = yf.Ticker(ticker).info.get("sector") or "Unknown"
+        except Exception:
+            _cache[ticker] = "Unknown"
+    return _cache[ticker]
+
+
+def get_sector_exposure(positions: list[dict], portfolio_value: float) -> dict[str, float]:
+    """Return {sector: market_value_fraction} for current positions."""
+    exposure: dict[str, float] = {}
+    for p in positions:
+        sector = get_sector(p["symbol"])
+        exposure[sector] = exposure.get(sector, 0.0) + float(p["market_value"])
+    return {s: v / portfolio_value for s, v in exposure.items()}
 
 
 def get_latest_price(ticker: str) -> float | None:
@@ -121,8 +140,12 @@ def run_auto_trader() -> None:
     buying_power    = float(account["buying_power"])
     log.info(f"Portfolio: ${portfolio_value:,.2f} | Buying power: ${buying_power:,.2f}")
 
-    existing_positions = get_positions()
-    log.info(f"Current positions: {existing_positions or 'none'}")
+    positions = get_positions()
+    existing_tickers = {p["symbol"] for p in positions}
+    log.info(f"Current positions: {existing_tickers or 'none'}")
+
+    sector_exposure = get_sector_exposure(positions, portfolio_value)
+    log.info(f"Sector exposure: { {s: f'{v*100:.1f}%' for s, v in sector_exposure.items()} }")
 
     signals = load_buy_signals(db)
     log.info(f"BUY signals from latest scan: {len(signals)}")
@@ -134,8 +157,16 @@ def run_auto_trader() -> None:
         ticker = sig["ticker"]
         score  = float(sig["score"])
 
-        if ticker in existing_positions:
+        if ticker in existing_tickers:
             log.info(f"  SKIP {ticker} — already in position")
+            continue
+
+        # Sector concentration check
+        sector = get_sector(ticker)
+        current_sector_pct = sector_exposure.get(sector, 0.0)
+        projected_pct = current_sector_pct + (trade_budget / portfolio_value)
+        if projected_pct > MAX_SECTOR_PCT:
+            log.info(f"  SKIP {ticker} — {sector} would reach {projected_pct*100:.1f}% (max {MAX_SECTOR_PCT*100:.0f}%)")
             continue
 
         if buying_power < trade_budget:
@@ -182,7 +213,8 @@ def run_auto_trader() -> None:
             })
 
             buying_power -= trade_budget
-            existing_positions.add(ticker)
+            existing_tickers.add(ticker)
+            sector_exposure[sector] = sector_exposure.get(sector, 0.0) + (trade_budget / portfolio_value)
             executed += 1
 
         except Exception as e:
