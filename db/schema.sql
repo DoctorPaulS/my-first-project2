@@ -102,3 +102,23 @@ CREATE TABLE IF NOT EXISTS auto_trades (
 
 CREATE INDEX IF NOT EXISTS idx_auto_trades_traded_at ON auto_trades(traded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_auto_trades_ticker ON auto_trades(ticker);
+
+-- Migration: Claude autonomous trader log
+-- Run this block separately if the tables above already exist
+
+CREATE TABLE IF NOT EXISTS claude_trades (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticker TEXT NOT NULL,
+    action TEXT NOT NULL,
+    qty FLOAT,
+    limit_price FLOAT,
+    stop_price FLOAT,
+    allocation_pct FLOAT,
+    reasoning TEXT,
+    status TEXT NOT NULL,
+    error TEXT,
+    traded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_claude_trades_traded_at ON claude_trades(traded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_claude_trades_ticker ON claude_trades(ticker);

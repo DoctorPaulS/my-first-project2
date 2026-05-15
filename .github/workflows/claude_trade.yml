@@ -1,0 +1,37 @@
+name: Claude Autonomous Trader
+
+on:
+  schedule:
+    # 9:35am ET (13:35 UTC) — 5 min after market open
+    - cron: "35 13 * * 1-5"
+    # 1:00pm ET (17:00 UTC) — midday reassessment
+    - cron: "0 17 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  claude-trade:
+    runs-on: ubuntu-latest
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      ALPACA_CLAUDE_API_KEY: ${{ secrets.ALPACA_CLAUDE_API_KEY }}
+      ALPACA_CLAUDE_SECRET_KEY: ${{ secrets.ALPACA_CLAUDE_SECRET_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Claude trader
+        run: python -m scanner.claude_trader
