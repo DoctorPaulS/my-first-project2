@@ -26,38 +26,43 @@ BASE         = "https://paper-api.alpaca.markets/v2"
 EXIT_SIGNALS = {"REDUCE", "EXIT"}
 
 
-def _headers() -> dict:
+def _headers(account: str = "auto") -> dict:
+    if account == "claude":
+        return {
+            "APCA-API-KEY-ID":     get_secret("ALPACA_CLAUDE_API_KEY"),
+            "APCA-API-SECRET-KEY": get_secret("ALPACA_CLAUDE_SECRET_KEY"),
+        }
     return {
         "APCA-API-KEY-ID":     get_secret("ALPACA_AUTO_API_KEY"),
         "APCA-API-SECRET-KEY": get_secret("ALPACA_AUTO_SECRET_KEY"),
     }
 
 
-def _get(path: str, params: dict = None):
-    r = requests.get(f"{BASE}{path}", headers=_headers(), params=params, timeout=10)
+def _get(path: str, headers: dict, params: dict = None):
+    r = requests.get(f"{BASE}{path}", headers=headers, params=params, timeout=10)
     r.raise_for_status()
     return r.json()
 
 
-def _post(path: str, body: dict) -> dict:
-    r = requests.post(f"{BASE}{path}", headers=_headers(), json=body, timeout=10)
+def _post(path: str, headers: dict, body: dict) -> dict:
+    r = requests.post(f"{BASE}{path}", headers=headers, json=body, timeout=10)
     if not r.ok:
         raise Exception(f"{r.status_code}: {r.text}")
     return r.json()
 
 
-def _delete(path: str) -> None:
-    r = requests.delete(f"{BASE}{path}", headers=_headers(), timeout=10)
+def _delete(path: str, headers: dict) -> None:
+    r = requests.delete(f"{BASE}{path}", headers=headers, timeout=10)
     if not r.ok:
         raise Exception(f"{r.status_code}: {r.text}")
 
 
-def _get_positions() -> list[dict]:
-    return _get("/positions")
+def _get_positions(headers: dict) -> list[dict]:
+    return _get("/positions", headers)
 
 
-def _get_open_orders() -> dict[str, list]:
-    orders = _get("/orders", {"status": "open", "limit": 500})
+def _get_open_orders(headers: dict) -> dict[str, list]:
+    orders = _get("/orders", headers, {"status": "open", "limit": 500})
     by_ticker: dict[str, list] = {}
     for o in orders:
         by_ticker.setdefault(o["symbol"], []).append(o)
@@ -71,16 +76,16 @@ def _has_active_stop(ticker: str, open_orders: dict) -> bool:
     )
 
 
-def _cancel_open_orders(ticker: str, open_orders: dict) -> None:
+def _cancel_open_orders(ticker: str, open_orders: dict, headers: dict) -> None:
     for o in open_orders.get(ticker, []):
         try:
-            _delete(f"/orders/{o['id']}")
+            _delete(f"/orders/{o['id']}", headers)
         except Exception as e:
             log.warning(f"    Could not cancel order {o['id']}: {e}")
 
 
-def _place_gtc_stop(ticker: str, qty: int, stop_price: float) -> dict:
-    return _post("/orders", {
+def _place_gtc_stop(ticker: str, qty: int, stop_price: float, headers: dict) -> dict:
+    return _post("/orders", headers, {
         "symbol":        ticker,
         "qty":           str(qty),
         "side":          "sell",
@@ -90,8 +95,8 @@ def _place_gtc_stop(ticker: str, qty: int, stop_price: float) -> dict:
     })
 
 
-def _close_position(ticker: str, qty: int) -> dict:
-    return _post("/orders", {
+def _close_position(ticker: str, qty: int, headers: dict) -> dict:
+    return _post("/orders", headers, {
         "symbol":        ticker,
         "qty":           str(qty),
         "side":          "sell",
@@ -146,18 +151,17 @@ def _calc_stop(ticker: str, current_price: float) -> float:
         return round(current_price * 0.92, 2)
 
 
-def run_exit_manager() -> None:
-    log.info("Starting exit manager...")
-    db        = get_db()
-    positions = _get_positions()
+def _run_for_account(account_name: str, headers: dict, db) -> None:
+    log.info(f"  [{account_name}] Checking positions...")
+    positions = _get_positions(headers)
 
     if not positions:
-        log.info("No open positions. Exiting.")
+        log.info(f"  [{account_name}] No open positions.")
         return
 
-    open_orders = _get_open_orders()
+    open_orders = _get_open_orders(headers)
     signals     = _get_latest_signals(db)
-    log.info(f"Checking {len(positions)} positions...")
+    log.info(f"  [{account_name}] {len(positions)} positions found.")
 
     for pos in positions:
         ticker        = pos["symbol"]
@@ -172,19 +176,19 @@ def run_exit_manager() -> None:
 
         # ── 1. Signal-based full exit ─────────────────────────────────────
         if signal in EXIT_SIGNALS:
-            log.info(f"  {ticker} {signal} (score={score:.0f}) → closing full position")
+            log.info(f"  [{account_name}] {ticker} {signal} (score={score:.0f}) → closing")
             try:
-                _cancel_open_orders(ticker, open_orders)
-                _close_position(ticker, int(qty))
+                _cancel_open_orders(ticker, open_orders, headers)
+                _close_position(ticker, int(qty), headers)
                 _log_exit(db, {
                     "ticker": ticker, "score": score, "signal": signal,
                     "order_type": "market", "qty": int(qty),
                     "status": "exit_signal",
                     "traded_at": datetime.now(timezone.utc).isoformat(),
                 })
-                log.info(f"  {ticker} closed")
+                log.info(f"  [{account_name}] {ticker} closed")
             except Exception as e:
-                log.error(f"  {ticker} close failed: {e}")
+                log.error(f"  [{account_name}] {ticker} close failed: {e}")
             continue
 
         # ── 2. Price target exits ─────────────────────────────────────────
@@ -192,60 +196,66 @@ def run_exit_manager() -> None:
         stop  = saved["stop_loss"] if saved else _calc_stop(ticker, current_price)
 
         if saved:
-            t1             = saved["target1"]
-            t2             = saved["target2"]
-            t1_triggered   = saved.get("target1_triggered", False)
-            t2_triggered   = saved.get("target2_triggered", False)
+            t1           = saved["target1"]
+            t2           = saved["target2"]
+            t1_triggered = saved.get("target1_triggered", False)
+            t2_triggered = saved.get("target2_triggered", False)
 
             if not t2_triggered and current_price >= t2:
-                log.info(f"  {ticker} hit Target 2 (${t2:.2f}) → closing full position")
+                log.info(f"  [{account_name}] {ticker} hit T2 (${t2:.2f}) → closing")
                 try:
-                    _cancel_open_orders(ticker, open_orders)
-                    _close_position(ticker, int(qty))
+                    _cancel_open_orders(ticker, open_orders, headers)
+                    _close_position(ticker, int(qty), headers)
                     db.table("price_targets").update({"target2_triggered": True}).eq("ticker", ticker).execute()
                     _log_exit(db, {
                         "ticker": ticker, "qty": int(qty), "order_type": "market",
                         "status": "target2_hit",
                         "traded_at": datetime.now(timezone.utc).isoformat(),
                     })
-                    log.info(f"  {ticker} closed at T2")
+                    log.info(f"  [{account_name}] {ticker} closed at T2")
                 except Exception as e:
-                    log.error(f"  {ticker} T2 exit failed: {e}")
+                    log.error(f"  [{account_name}] {ticker} T2 exit failed: {e}")
                 continue
 
             if not t1_triggered and current_price >= t1:
                 half = max(1, int(qty / 2))
-                log.info(f"  {ticker} hit Target 1 (${t1:.2f}) → selling {half} shares, moving stop to breakeven")
+                log.info(f"  [{account_name}] {ticker} hit T1 (${t1:.2f}) → selling {half} shares")
                 try:
-                    _close_position(ticker, half)
+                    _close_position(ticker, half, headers)
                     new_stop = round(entry_price, 2)
                     db.table("price_targets").update({
-                        "target1_triggered": True,
-                        "stop_loss": new_stop,
+                        "target1_triggered": True, "stop_loss": new_stop,
                     }).eq("ticker", ticker).execute()
-                    # Replace existing stop with breakeven stop
-                    _cancel_open_orders(ticker, open_orders)
-                    _place_gtc_stop(ticker, int(qty - half), new_stop)
+                    _cancel_open_orders(ticker, open_orders, headers)
+                    _place_gtc_stop(ticker, int(qty - half), new_stop, headers)
                     _log_exit(db, {
                         "ticker": ticker, "qty": half, "order_type": "market",
                         "status": "target1_hit",
                         "traded_at": datetime.now(timezone.utc).isoformat(),
                     })
-                    log.info(f"  {ticker} half sold, breakeven stop at ${new_stop:.2f}")
+                    log.info(f"  [{account_name}] {ticker} half sold, breakeven stop ${new_stop:.2f}")
                 except Exception as e:
-                    log.error(f"  {ticker} T1 exit failed: {e}")
+                    log.error(f"  [{account_name}] {ticker} T1 exit failed: {e}")
                 continue
 
         # ── 3. Ensure GTC stop exists ─────────────────────────────────────
         if _has_active_stop(ticker, open_orders):
-            log.info(f"  {ticker} stop OK")
+            log.info(f"  [{account_name}] {ticker} stop OK")
         else:
-            log.info(f"  {ticker} no active stop → placing GTC stop at ${stop:.2f}")
+            log.info(f"  [{account_name}] {ticker} no active stop → placing GTC stop at ${stop:.2f}")
             try:
-                _place_gtc_stop(ticker, int(qty), stop)
-                log.info(f"  {ticker} GTC stop placed at ${stop:.2f}")
+                _place_gtc_stop(ticker, int(qty), stop, headers)
+                log.info(f"  [{account_name}] {ticker} GTC stop placed at ${stop:.2f}")
             except Exception as e:
-                log.error(f"  {ticker} stop placement failed: {e}")
+                log.error(f"  [{account_name}] {ticker} stop placement failed: {e}")
+
+
+def run_exit_manager() -> None:
+    log.info("Starting exit manager...")
+    db = get_db()
+
+    _run_for_account("auto",   _headers("auto"),   db)
+    _run_for_account("claude", _headers("claude"),  db)
 
     log.info("Exit manager complete.")
 

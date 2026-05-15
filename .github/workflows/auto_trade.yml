@@ -15,6 +15,8 @@ jobs:
       SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
       ALPACA_AUTO_API_KEY: ${{ secrets.ALPACA_AUTO_API_KEY }}
       ALPACA_AUTO_SECRET_KEY: ${{ secrets.ALPACA_AUTO_SECRET_KEY }}
+      ALPACA_CLAUDE_API_KEY: ${{ secrets.ALPACA_CLAUDE_API_KEY }}
+      ALPACA_CLAUDE_SECRET_KEY: ${{ secrets.ALPACA_CLAUDE_SECRET_KEY }}
 
     steps:
       - name: Checkout code

@@ -93,6 +93,20 @@ def _place_order(ticker: str, qty: int, side: str, order_type: str = "market",
     return _post("/orders", body)
 
 
+def _place_buy_oto(ticker: str, qty: int, limit_price: float, stop_price: float) -> dict:
+    """OTO bracket: limit buy with attached stop. Avoids 403 wash-trade on separate stop."""
+    return _post("/orders", {
+        "symbol":        ticker,
+        "qty":           str(qty),
+        "side":          "buy",
+        "type":          "limit",
+        "time_in_force": "day",
+        "order_class":   "oto",
+        "limit_price":   str(round(limit_price, 2)),
+        "stop_loss":     {"stop_price": str(round(stop_price, 2))},
+    })
+
+
 def _place_gtc_stop(ticker: str, qty: int, stop_price: float) -> dict:
     return _post("/orders", {
         "symbol":        ticker,
@@ -348,17 +362,11 @@ def _execute_decisions(decisions_response: dict, account: dict,
                     log.info(f"  SKIP buy {ticker} — allocation too small for 1 share")
                     continue
 
-                # Limit order slightly above current price
+                # OTO bracket: limit buy + attached stop (avoids wash-trade 403)
                 limit_price = round(price * 1.005, 2)
-                _place_order(ticker, qty, "buy", "limit", limit_price)
-
-                # Immediate GTC stop at 8% below entry
-                stop_price = round(price * 0.92, 2)
-                try:
-                    _place_gtc_stop(ticker, qty, stop_price)
-                    log.info(f"  BUY {ticker} {qty} shares @ limit ${limit_price:.2f}, stop ${stop_price:.2f} — {reason}")
-                except Exception as se:
-                    log.warning(f"  BUY {ticker} stop failed: {se}")
+                stop_price  = round(price * 0.92, 2)
+                _place_buy_oto(ticker, qty, limit_price, stop_price)
+                log.info(f"  BUY {ticker} {qty} shares @ limit ${limit_price:.2f}, stop ${stop_price:.2f} — {reason}")
 
                 _log_trade(db, {
                     "ticker": ticker, "action": "buy", "qty": qty,
