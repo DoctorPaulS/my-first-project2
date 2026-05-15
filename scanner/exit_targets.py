@@ -1,4 +1,5 @@
 import pandas as pd
+from scanner.data_fetcher import fetch_ohlcv
 
 
 def calc_exit_targets(ohlcv: pd.DataFrame) -> dict:
@@ -42,3 +43,15 @@ def calc_exit_targets(ohlcv: pd.DataFrame) -> dict:
         "resistance": resistance,
         "risk_pct": (risk / current_price) * 100,
     }
+
+
+def calc_atr_stop(ticker: str, price: float) -> float:
+    """ATR-based stop at 1.5×ATR below price, clamped to 5–15% range."""
+    try:
+        ohlcv = fetch_ohlcv(ticker, period="1y")
+        stop  = calc_exit_targets(ohlcv)["stop"]
+        stop  = max(stop, price * 0.85)   # never more than 15% below
+        stop  = min(stop, price * 0.95)   # never less than 5% below
+        return round(stop, 2)
+    except Exception:
+        return round(price * 0.92, 2)     # fallback: 8%

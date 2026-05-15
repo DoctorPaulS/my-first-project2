@@ -23,3 +23,27 @@ def get_settings(key: str, default: dict) -> dict:
 def save_settings(key: str, value: dict) -> None:
     db = get_db()
     db.table("settings").upsert({"key": key, "value": value}).execute()
+
+
+def get_latest_signals(db, fields: str = "ticker,score,signal") -> dict:
+    """Return {ticker: row} for the most recent scan batch."""
+    try:
+        latest = (
+            db.table("scan_results")
+            .select("scanned_at")
+            .order("scanned_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not latest.data:
+            return {}
+        scan_time = latest.data[0]["scanned_at"]
+        rows = (
+            db.table("scan_results")
+            .select(fields)
+            .eq("scanned_at", scan_time)
+            .execute()
+        )
+        return {r["ticker"]: r for r in rows.data}
+    except Exception:
+        return {}

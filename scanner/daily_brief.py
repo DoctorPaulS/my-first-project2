@@ -6,7 +6,7 @@ Used by both send_brief.py (email) and the Daily Brief app page.
 import requests
 import anthropic
 from config import get_secret
-from db.client import get_db
+from db.client import get_db, get_latest_signals
 from scanner.ai_summary import fetch_headlines
 from scanner.exit_targets import calc_exit_targets
 from scanner.data_fetcher import fetch_ohlcv
@@ -43,28 +43,6 @@ def _get_positions(headers: dict) -> list[dict]:
     except Exception:
         return []
 
-
-def _get_latest_signals(db) -> dict:
-    try:
-        latest = (
-            db.table("scan_results")
-            .select("scanned_at")
-            .order("scanned_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if not latest.data:
-            return {}
-        scan_time = latest.data[0]["scanned_at"]
-        rows = (
-            db.table("scan_results")
-            .select("ticker,score,signal")
-            .eq("scanned_at", scan_time)
-            .execute()
-        )
-        return {r["ticker"]: r for r in rows.data}
-    except Exception:
-        return {}
 
 
 def _get_price_targets(db, ticker: str) -> dict | None:
@@ -176,7 +154,7 @@ def build_account_brief(label: str, key: str, secret: str) -> dict:
     headers   = _headers(key, secret)
     account   = _get_account(headers)
     positions = _get_positions(headers)
-    signals   = _get_latest_signals(db)
+    signals   = get_latest_signals(db)
 
     briefs = []
     for pos in positions:

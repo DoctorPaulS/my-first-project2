@@ -12,11 +12,10 @@ import requests
 import anthropic
 import yfinance as yf
 from datetime import datetime, timezone
-from db.client import get_db
+from db.client import get_db, get_latest_signals
 from config import get_secret
 from scanner.ai_summary import fetch_headlines
-from scanner.exit_targets import calc_exit_targets
-from scanner.data_fetcher import fetch_ohlcv
+from scanner.exit_targets import calc_atr_stop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -134,17 +133,6 @@ def _place_gtc_stop(ticker: str, qty: int, stop_price: float) -> dict:
     })
 
 
-def _calc_atr_stop(ticker: str, price: float) -> float:
-    """ATR-based stop at 1.5×ATR below price, clamped to 5–15% range."""
-    try:
-        ohlcv = fetch_ohlcv(ticker, period="1y")
-        stop  = calc_exit_targets(ohlcv)["stop"]
-        stop  = max(stop, price * 0.85)   # never more than 15% below
-        stop  = min(stop, price * 0.95)   # never less than 5% below
-        return round(stop, 2)
-    except Exception:
-        return round(price * 0.92, 2)     # fallback: 8%
-
 
 _sector_cache: dict[str, str] = {}
 
@@ -157,27 +145,6 @@ def _get_sector(ticker: str) -> str:
     return _sector_cache[ticker]
 
 
-def _get_scan_signals(db) -> dict:
-    try:
-        latest = (
-            db.table("scan_results")
-            .select("scanned_at")
-            .order("scanned_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if not latest.data:
-            return {}
-        scan_time = latest.data[0]["scanned_at"]
-        rows = (
-            db.table("scan_results")
-            .select("ticker,score,signal,reasoning,indicator_detail")
-            .eq("scanned_at", scan_time)
-            .execute()
-        )
-        return {r["ticker"]: r for r in rows.data}
-    except Exception:
-        return {}
 
 
 def _log_trade(db, record: dict) -> None:
@@ -418,7 +385,7 @@ def _execute_decisions(decisions_response: dict, account: dict,
 
                 # OTO bracket: limit buy + attached stop (avoids wash-trade 403)
                 limit_price = round(price * 1.005, 2)
-                stop_price  = _calc_atr_stop(ticker, price)
+                stop_price  = calc_atr_stop(ticker, price)
                 _place_buy_oto(ticker, qty, limit_price, stop_price)
                 log.info(f"  BUY {ticker} {qty} shares @ limit ${limit_price:.2f}, stop ${stop_price:.2f} — {reason}")
 
@@ -449,7 +416,7 @@ def run_claude_trader() -> None:
     account     = _get_account()
     positions   = _get_positions()
     open_orders = _get_open_orders()
-    signals     = _get_scan_signals(db)
+    signals     = get_latest_signals(db, "ticker,score,signal,reasoning,indicator_detail")
 
     portfolio_value = float(account["portfolio_value"])
     log.info(f"Portfolio: ${portfolio_value:,.2f} | Positions: {len(positions)} | Signals loaded: {len(signals)}")

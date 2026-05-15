@@ -10,10 +10,9 @@ import sys
 import logging
 import requests
 from datetime import datetime, timezone
-from db.client import get_db
+from db.client import get_db, get_latest_signals
 from config import get_secret
-from scanner.exit_targets import calc_exit_targets
-from scanner.data_fetcher import fetch_ohlcv
+from scanner.exit_targets import calc_atr_stop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -105,28 +104,6 @@ def _close_position(ticker: str, qty: int, headers: dict) -> dict:
     })
 
 
-def _get_latest_signals(db) -> dict:
-    try:
-        latest = (
-            db.table("scan_results")
-            .select("scanned_at")
-            .order("scanned_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if not latest.data:
-            return {}
-        scan_time = latest.data[0]["scanned_at"]
-        rows = (
-            db.table("scan_results")
-            .select("ticker,score,signal")
-            .eq("scanned_at", scan_time)
-            .execute()
-        )
-        return {r["ticker"]: r for r in rows.data}
-    except Exception:
-        return {}
-
 
 def _get_price_targets(db, ticker: str) -> dict | None:
     try:
@@ -143,13 +120,6 @@ def _log_exit(db, record: dict) -> None:
         log.warning(f"  Could not log exit: {e}")
 
 
-def _calc_stop(ticker: str, current_price: float) -> float:
-    try:
-        ohlcv = fetch_ohlcv(ticker, period="1y")
-        return round(calc_exit_targets(ohlcv)["stop"], 2)
-    except Exception:
-        return round(current_price * 0.92, 2)
-
 
 def _run_for_account(account_name: str, headers: dict, db) -> None:
     log.info(f"  [{account_name}] Checking positions...")
@@ -160,7 +130,7 @@ def _run_for_account(account_name: str, headers: dict, db) -> None:
         return
 
     open_orders = _get_open_orders(headers)
-    signals     = _get_latest_signals(db)
+    signals     = get_latest_signals(db)
     log.info(f"  [{account_name}] {len(positions)} positions found.")
 
     for pos in positions:
@@ -193,7 +163,7 @@ def _run_for_account(account_name: str, headers: dict, db) -> None:
 
         # ── 2. Price target exits ─────────────────────────────────────────
         saved = _get_price_targets(db, ticker)
-        stop  = saved["stop_loss"] if saved else _calc_stop(ticker, current_price)
+        stop  = saved["stop_loss"] if saved else calc_atr_stop(ticker, current_price)
 
         if saved:
             t1           = saved["target1"]

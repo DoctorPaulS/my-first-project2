@@ -12,8 +12,7 @@ import yfinance as yf
 from datetime import datetime, timezone
 from db.client import get_db
 from config import get_secret
-from scanner.exit_targets import calc_exit_targets
-from scanner.data_fetcher import fetch_ohlcv
+from scanner.exit_targets import calc_atr_stop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,17 +80,6 @@ def get_sector(ticker: str, _cache: dict = {}) -> str:
             _cache[ticker] = "Unknown"
     return _cache[ticker]
 
-
-def calc_atr_stop(ticker: str, price: float) -> float:
-    """ATR-based stop at 1.5×ATR below price, clamped to 5–15% range."""
-    try:
-        ohlcv = fetch_ohlcv(ticker, period="1y")
-        stop  = calc_exit_targets(ohlcv)["stop"]
-        stop  = max(stop, price * 0.85)   # never more than 15% below
-        stop  = min(stop, price * 0.95)   # never less than 5% below
-        return round(stop, 2)
-    except Exception:
-        return round(price * 0.92, 2)     # fallback: 8%
 
 
 def get_sector_exposure(positions: list[dict], portfolio_value: float) -> dict[str, float]:
