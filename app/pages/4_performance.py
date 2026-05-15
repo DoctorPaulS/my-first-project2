@@ -143,8 +143,8 @@ if _live_positions:
     _total_pl   = sum(float(p["unrealized_pl"]) for p in _live_positions)
     _total_pct  = (_total_pl / _total_cost * 100) if _total_cost else 0
     lc1, lc2, lc3, lc4 = st.columns(4)
-    lc1.metric("Invested",       f"${_total_cost:,.0f}")
-    lc2.metric("Market Value",   f"${_total_mkt:,.0f}")
+    lc1.metric("Invested",       f"${_total_cost:,.2f}")
+    lc2.metric("Market Value",   f"${_total_mkt:,.2f}")
     lc3.metric("Unrealized P&L", f"${_total_pl:+,.0f}", f"{_total_pct:+.2f}%")
     lc4.metric("Open Positions",  len(_live_positions))
     st.divider()
@@ -258,8 +258,8 @@ if positions:
         use_container_width=True,
         column_config={
             "Qty":          st.column_config.NumberColumn("Qty",          format="%.6f"),
-            "Entry $":      st.column_config.NumberColumn("Entry $",      format="$%.4f"),
-            "Current $":    st.column_config.NumberColumn("Current $",    format="$%.4f"),
+            "Entry $":      st.column_config.NumberColumn("Entry $",      format="$%.2f"),
+            "Current $":    st.column_config.NumberColumn("Current $",    format="$%.2f"),
             "Market Value": st.column_config.NumberColumn("Market Value", format="$%,.2f"),
             "Return %":     st.column_config.NumberColumn("Return %",     format="%+.2f%%"),
             "P&L $":        st.column_config.NumberColumn("P&L $",        format="$%+,.2f"),
