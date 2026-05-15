@@ -25,16 +25,18 @@ def _upper_wick(df: pd.DataFrame) -> pd.Series:
 @register(group="candlesticks")
 class CandlestickPatternIndicator(BaseIndicator):
     def score(self, ohlcv: pd.DataFrame) -> tuple[float, str]:
-        if len(ohlcv) < 3:
+        if len(ohlcv) < 5:
             return 5.0, "Insufficient data for candlestick patterns."
 
         df = ohlcv.copy()
         found = []
 
-        # --- Check last 3 candles for patterns ---
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
+        # --- Check last 5 candles for patterns ---
+        last  = df.iloc[-1]
+        prev  = df.iloc[-2]
         prev2 = df.iloc[-3]
+        prev3 = df.iloc[-4]
+        prev4 = df.iloc[-5]
 
         body_last = abs(last["Close"] - last["Open"])
         body_prev = abs(prev["Close"] - prev["Open"])
@@ -74,8 +76,10 @@ class CandlestickPatternIndicator(BaseIndicator):
         if range_last > 0 and body_last / range_last < 0.1:
             found.append(("neutral", "Doji candle (market indecision)"))
 
-        # Morning Star (3-candle bullish reversal)
+        # Pre-compute bodies needed by multiple patterns
         body_prev2 = abs(prev2["Close"] - prev2["Open"])
+
+        # Morning Star (3-candle bullish reversal)
         if (prev2["Close"] < prev2["Open"] and
                 body_prev < 0.5 * body_prev2 and
                 last["Close"] > last["Open"] and
@@ -88,6 +92,37 @@ class CandlestickPatternIndicator(BaseIndicator):
                 last["Close"] < last["Open"] and
                 last["Close"] < (prev2["Open"] + prev2["Close"]) / 2):
             found.append(("bearish", "Evening star pattern (3-candle bearish reversal)"))
+
+        # Three White Soldiers (3-candle bullish continuation after downtrend)
+        body_prev3 = abs(prev3["Close"] - prev3["Open"])
+        prior_trend_down = prev4["Close"] < prev3["Open"]  # prior context: was falling
+        if (prior_trend_down and
+                prev2["Close"] > prev2["Open"] and
+                prev["Close"]  > prev["Open"]  and
+                last["Close"]  > last["Open"]  and
+                prev["Close"]  > prev2["Close"] and
+                last["Close"]  > prev["Close"]  and
+                prev["Open"]   > prev2["Open"]  and
+                last["Open"]   > prev["Open"]   and
+                body_prev2 > 0.5 * (prev2["High"] - prev2["Low"]) and
+                body_prev  > 0.5 * (prev["High"]  - prev["Low"])  and
+                body_last  > 0.5 * (last["High"]  - last["Low"])):
+            found.append(("bullish", "Three white soldiers (strong bullish continuation)"))
+
+        # Three Black Crows (3-candle bearish continuation after uptrend)
+        prior_trend_up = prev4["Close"] > prev3["Open"]
+        if (prior_trend_up and
+                prev2["Close"] < prev2["Open"] and
+                prev["Close"]  < prev["Open"]  and
+                last["Close"]  < last["Open"]  and
+                prev["Close"]  < prev2["Close"] and
+                last["Close"]  < prev["Close"]  and
+                prev["Open"]   < prev2["Open"]  and
+                last["Open"]   < prev["Open"]   and
+                body_prev2 > 0.5 * (prev2["High"] - prev2["Low"]) and
+                body_prev  > 0.5 * (prev["High"]  - prev["Low"])  and
+                body_last  > 0.5 * (last["High"]  - last["Low"])):
+            found.append(("bearish", "Three black crows (strong bearish continuation)"))
 
         if not found:
             return 5.0, "No significant candlestick pattern detected."
