@@ -239,17 +239,29 @@ if positions:
     st.subheader("Position Breakdown")
     rows = []
     for p in positions:
-        qty        = float(p["qty"])
-        cost_basis = float(p["cost_basis"])
-        mkt_value  = float(p["market_value"])
+        qty         = float(p["qty"])
+        cost_basis  = float(p["cost_basis"])
+        mkt_value   = float(p["market_value"])
         entry_price = cost_basis / qty
         rows.append({
-            "Ticker":      p["symbol"],
-            "Qty":         int(qty),
-            "Entry $":     f"${entry_price:.2f}",
-            "Current $":   f"${float(p['current_price']):.2f}",
-            "Market Value":f"${mkt_value:,.0f}",
-            "Return":      f"{float(p['unrealized_plpc'])*100:+.1f}%",
-            "P&L $":       f"${float(p['unrealized_pl']):+,.0f}",
+            "Ticker":       p["symbol"],
+            "Qty":          qty,
+            "Entry $":      entry_price,
+            "Current $":    float(p["current_price"]),
+            "Market Value": mkt_value,
+            "Return %":     float(p["unrealized_plpc"]) * 100,
+            "P&L $":        float(p["unrealized_pl"]),
         })
-    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    st.dataframe(
+        pd.DataFrame(rows),
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Qty":          st.column_config.NumberColumn("Qty",          format="%.6f"),
+            "Entry $":      st.column_config.NumberColumn("Entry $",      format="$%.4f"),
+            "Current $":    st.column_config.NumberColumn("Current $",    format="$%.4f"),
+            "Market Value": st.column_config.NumberColumn("Market Value", format="$%,.2f"),
+            "Return %":     st.column_config.NumberColumn("Return %",     format="%+.2f%%"),
+            "P&L $":        st.column_config.NumberColumn("P&L $",        format="$%+,.2f"),
+        },
+    )
