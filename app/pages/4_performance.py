@@ -12,6 +12,20 @@ st.caption("Invested positions vs S&P 500 (SPY) and Total Market (VTI) — cash 
 YF_PERIOD_MAP   = {"1D": "1d",  "1W": "5d",  "1M": "1mo", "3M": "3mo", "6M": "6mo", "1Y": "1y"}
 YF_INTERVAL_MAP = {"1D": "15m", "1W": "1h",  "1M": "1d",  "3M": "1d",  "6M": "1d",  "1Y": "1d"}
 
+# --- Live P&L from Alpaca (ground truth) ---
+_live_positions = get_positions()
+if _live_positions:
+    _total_cost   = sum(float(p["cost_basis"])    for p in _live_positions)
+    _total_mkt    = sum(float(p["market_value"])  for p in _live_positions)
+    _total_pl     = sum(float(p["unrealized_pl"]) for p in _live_positions)
+    _total_pct    = (_total_pl / _total_cost * 100) if _total_cost else 0
+    lc1, lc2, lc3, lc4 = st.columns(4)
+    lc1.metric("Invested",      f"${_total_cost:,.0f}")
+    lc2.metric("Market Value",  f"${_total_mkt:,.0f}")
+    lc3.metric("Unrealized P&L",f"${_total_pl:+,.0f}", f"{_total_pct:+.2f}%")
+    lc4.metric("Open Positions", len(_live_positions))
+    st.divider()
+
 period_label = st.selectbox("Time Period", list(YF_PERIOD_MAP.keys()), index=2)
 yf_period   = YF_PERIOD_MAP[period_label]
 yf_interval = YF_INTERVAL_MAP[period_label]
@@ -50,8 +64,11 @@ def get_filled_orders() -> dict[str, dict]:
             if o.get("side") == "buy" and o.get("filled_at") and o.get("filled_avg_price"):
                 ticker = o["symbol"]
                 if ticker not in entries:
+                    ts = pd.Timestamp(o["filled_at"])
+                    # tz_convert(None) strips timezone from tz-aware timestamps
+                    entry_date = ts.tz_convert(None) if ts.tzinfo else ts
                     entries[ticker] = {
-                        "entry_date":  pd.Timestamp(o["filled_at"]).tz_localize(None),
+                        "entry_date":  entry_date,
                         "entry_price": float(o["filled_avg_price"]),
                         "qty":         float(o.get("filled_qty", 0)),
                     }
