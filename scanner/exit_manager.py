@@ -4,6 +4,11 @@ Exit manager — runs every morning before the auto trader to:
 2. Close positions with REDUCE/EXIT signals
 3. Sell 50% at Target 1, move stop to breakeven, close remainder at Target 2
 
+Auto-account only rule-based exits:
+4. Close if score drops below AUTO_SCORE_EXIT_THRESHOLD (40)
+5. Trim 50% if unrealized gain exceeds AUTO_PROFIT_TRIM_PCT (20%)
+6. Trim back to target if position exceeds AUTO_MAX_POSITION_PCT (12%)
+
 Run with: python -m scanner.exit_manager
 """
 import sys
@@ -23,6 +28,11 @@ log = logging.getLogger(__name__)
 
 BASE         = "https://paper-api.alpaca.markets/v2"
 EXIT_SIGNALS = {"REDUCE", "EXIT"}
+
+AUTO_SCORE_EXIT_THRESHOLD = 40    # exit if score drops below this
+AUTO_PROFIT_TRIM_PCT      = 0.20  # trim 50% if unrealized gain > 20%
+AUTO_MAX_POSITION_PCT     = 0.12  # trim if position > 12% of portfolio
+AUTO_TARGET_POSITION_PCT  = 0.07  # trim back to this % of portfolio
 
 
 def _headers(account: str = "auto") -> dict:
@@ -66,6 +76,22 @@ def _get_open_orders(headers: dict) -> dict[str, list]:
     for o in orders:
         by_ticker.setdefault(o["symbol"], []).append(o)
     return by_ticker
+
+
+def _get_account(headers: dict) -> dict:
+    try:
+        return _get("/account", headers)
+    except Exception:
+        return {}
+
+
+def _get_existing_stop_price(ticker: str, open_orders: dict) -> float | None:
+    for o in open_orders.get(ticker, []):
+        if o.get("side") == "sell" and o.get("type") in ("stop", "stop_limit"):
+            sp = o.get("stop_price")
+            if sp:
+                return float(sp)
+    return None
 
 
 def _has_active_stop(ticker: str, open_orders: dict) -> bool:
@@ -121,7 +147,9 @@ def _log_exit(db, record: dict) -> None:
 
 
 
-def _run_for_account(account_name: str, headers: dict, db) -> None:
+def _run_for_account(account_name: str, headers: dict, db,
+                     apply_auto_rules: bool = False,
+                     portfolio_value: float = 0.0) -> None:
     log.info(f"  [{account_name}] Checking positions...")
     positions = _get_positions(headers)
 
@@ -208,7 +236,74 @@ def _run_for_account(account_name: str, headers: dict, db) -> None:
                     log.error(f"  [{account_name}] {ticker} T1 exit failed: {e}")
                 continue
 
-        # ── 3. Ensure GTC stop exists ─────────────────────────────────────
+        # ── 3. Auto rule-based exits (score, profit, size) ───────────────
+        if apply_auto_rules:
+
+            # 3a. Score exit — position has deteriorated below HOLD range
+            if 0 < score < AUTO_SCORE_EXIT_THRESHOLD:
+                log.info(f"  [{account_name}] {ticker} score={score:.0f} < {AUTO_SCORE_EXIT_THRESHOLD} → closing")
+                try:
+                    _cancel_open_orders(ticker, open_orders, headers)
+                    _close_position(ticker, int(qty), headers)
+                    _log_exit(db, {
+                        "ticker": ticker, "score": score, "signal": signal,
+                        "order_type": "market", "qty": int(qty),
+                        "status": "score_exit",
+                        "traded_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    log.info(f"  [{account_name}] {ticker} closed on score exit")
+                except Exception as e:
+                    log.error(f"  [{account_name}] {ticker} score exit failed: {e}")
+                continue
+
+            # 3b. Profit trim — lock in gains when position is up >20%
+            pnl_pct = float(pos.get("unrealized_plpc", 0))
+            if pnl_pct >= AUTO_PROFIT_TRIM_PCT:
+                trim_qty   = max(1, int(qty / 2))
+                remaining  = int(qty) - trim_qty
+                stop_price = _get_existing_stop_price(ticker, open_orders) or calc_atr_stop(ticker, current_price)
+                log.info(f"  [{account_name}] {ticker} up {pnl_pct*100:.1f}% → trimming {trim_qty} shares")
+                try:
+                    _cancel_open_orders(ticker, open_orders, headers)
+                    _close_position(ticker, trim_qty, headers)
+                    if remaining > 0:
+                        _place_gtc_stop(ticker, remaining, stop_price, headers)
+                    _log_exit(db, {
+                        "ticker": ticker, "qty": trim_qty, "order_type": "market",
+                        "status": "profit_trim",
+                        "traded_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    log.info(f"  [{account_name}] {ticker} trimmed, stop at ${stop_price:.2f} for {remaining} shares")
+                except Exception as e:
+                    log.error(f"  [{account_name}] {ticker} profit trim failed: {e}")
+                continue
+
+            # 3c. Position size trim — don't let any position dominate the portfolio
+            if portfolio_value > 0:
+                pos_pct = float(pos["market_value"]) / portfolio_value
+                if pos_pct > AUTO_MAX_POSITION_PCT:
+                    target_value = portfolio_value * AUTO_TARGET_POSITION_PCT
+                    trim_value   = float(pos["market_value"]) - target_value
+                    trim_qty     = max(1, int(trim_value / current_price))
+                    remaining    = int(qty) - trim_qty
+                    stop_price   = _get_existing_stop_price(ticker, open_orders) or calc_atr_stop(ticker, current_price)
+                    log.info(f"  [{account_name}] {ticker} is {pos_pct*100:.1f}% of portfolio → trimming {trim_qty} shares")
+                    try:
+                        _cancel_open_orders(ticker, open_orders, headers)
+                        _close_position(ticker, trim_qty, headers)
+                        if remaining > 0:
+                            _place_gtc_stop(ticker, remaining, stop_price, headers)
+                        _log_exit(db, {
+                            "ticker": ticker, "qty": trim_qty, "order_type": "market",
+                            "status": "size_trim",
+                            "traded_at": datetime.now(timezone.utc).isoformat(),
+                        })
+                        log.info(f"  [{account_name}] {ticker} trimmed to ~{AUTO_TARGET_POSITION_PCT*100:.0f}%")
+                    except Exception as e:
+                        log.error(f"  [{account_name}] {ticker} size trim failed: {e}")
+                    continue
+
+        # ── 4. Ensure GTC stop exists ─────────────────────────────────────
         if _has_active_stop(ticker, open_orders):
             log.info(f"  [{account_name}] {ticker} stop OK")
         else:
@@ -224,8 +319,13 @@ def run_exit_manager() -> None:
     log.info("Starting exit manager...")
     db = get_db()
 
-    _run_for_account("auto",   _headers("auto"),   db)
-    _run_for_account("claude", _headers("claude"),  db)
+    auto_headers     = _headers("auto")
+    auto_account     = _get_account(auto_headers)
+    auto_portfolio_value = float(auto_account.get("portfolio_value", 0))
+
+    _run_for_account("auto",   auto_headers,       db,
+                     apply_auto_rules=True, portfolio_value=auto_portfolio_value)
+    _run_for_account("claude", _headers("claude"), db)
 
     log.info("Exit manager complete.")
 
