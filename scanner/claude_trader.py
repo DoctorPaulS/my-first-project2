@@ -7,6 +7,7 @@ Run with: python -m scanner.claude_trader
 """
 import sys
 import json
+import time
 import logging
 import requests
 import anthropic
@@ -312,21 +313,34 @@ Respond with your JSON decisions."""
     return json.loads(raw)
 
 
-def _cancel_all_orders_for_ticker(ticker: str) -> None:
-    """Fetch and cancel all open orders for a ticker via a fresh API call."""
+def _cancel_all_orders_for_ticker(ticker: str, max_wait: int = 10) -> bool:
+    """Cancel all open orders for a ticker, then poll until cleared.
+    Returns True if all orders are gone, False if still stuck after max_wait seconds."""
     try:
         orders = _get("/orders", {"status": "open", "symbols": ticker, "limit": 100})
         if not orders:
-            log.info(f"  No open orders found for {ticker}")
-            return
+            return True
         for o in orders:
             try:
                 _delete(f"/orders/{o['id']}")
                 log.info(f"  Cancelled {o.get('type','?')} order {o['id']} for {ticker}")
             except Exception as e:
-                log.warning(f"  Could not cancel order {o['id']} for {ticker}: {e}")
+                if "pending cancel" in str(e).lower():
+                    log.info(f"  Order {o['id']} for {ticker} already pending cancel — waiting")
+                else:
+                    log.warning(f"  Could not cancel order {o['id']} for {ticker}: {e}")
+        # Poll until Alpaca finishes processing the cancellations
+        for i in range(max_wait):
+            time.sleep(1.0)
+            remaining = _get("/orders", {"status": "open", "symbols": ticker, "limit": 100})
+            if not remaining:
+                return True
+            log.info(f"  [{i+1}/{max_wait}] Waiting for {ticker} orders to clear...")
+        log.warning(f"  Orders for {ticker} still held after {max_wait}s — skipping")
+        return False
     except Exception as e:
-        log.warning(f"  Could not fetch orders for {ticker}: {e}")
+        log.warning(f"  Could not process orders for {ticker}: {e}")
+        return False
 
 
 def _existing_stop_price(ticker: str) -> float | None:
@@ -366,7 +380,8 @@ def _execute_decisions(decisions_response: dict, account: dict,
                     log.warning(f"  SKIP sell {ticker} — not in positions")
                     continue
                 qty = int(float(pos["qty"]))
-                _cancel_all_orders_for_ticker(ticker)
+                if not _cancel_all_orders_for_ticker(ticker):
+                    continue
                 _place_order(ticker, qty, "sell")
                 log.info(f"  SELL {ticker} {qty} shares — {reason}")
                 _log_trade(db, {
@@ -391,7 +406,8 @@ def _execute_decisions(decisions_response: dict, account: dict,
                     current_price = _get_latest_price(ticker) or float(pos["current_price"])
                     stop_price = calc_atr_stop(ticker, current_price)
 
-                _cancel_all_orders_for_ticker(ticker)
+                if not _cancel_all_orders_for_ticker(ticker):
+                    continue
                 _place_order(ticker, trim_qty, "sell")
                 log.info(f"  TRIM {ticker} {trim_qty} shares ({d.get('trim_pct', 50):.0f}%) — {reason}")
 
