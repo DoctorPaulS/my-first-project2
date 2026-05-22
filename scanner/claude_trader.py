@@ -338,6 +338,14 @@ def _execute_decisions(decisions_response: dict, account: dict,
     pos_map         = {p["symbol"]: p for p in positions}
     decisions       = decisions_response.get("decisions", [])
 
+    # Re-fetch open orders — exit_manager may have placed GTC stops
+    # during the ~30s Claude API call, making the earlier list stale
+    try:
+        open_orders = _get_open_orders()
+        log.info(f"  Refreshed open orders: {len(open_orders)} found")
+    except Exception as e:
+        log.warning(f"  Could not refresh open orders: {e} — using stale list")
+
     log.info(f"Market assessment: {decisions_response.get('market_assessment', '')}")
     log.info(f"Portfolio notes: {decisions_response.get('portfolio_notes', '')}")
     log.info(f"Executing {len(decisions)} decisions...")
