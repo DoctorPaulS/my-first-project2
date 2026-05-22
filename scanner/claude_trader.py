@@ -312,39 +312,43 @@ Respond with your JSON decisions."""
     return json.loads(raw)
 
 
-def _cancel_orders_for_ticker(ticker: str, open_orders: list[dict]) -> None:
-    for o in open_orders:
-        if o.get("symbol") == ticker:
+def _cancel_all_orders_for_ticker(ticker: str) -> None:
+    """Fetch and cancel all open orders for a ticker via a fresh API call."""
+    try:
+        orders = _get("/orders", {"status": "open", "symbols": ticker, "limit": 100})
+        if not orders:
+            log.info(f"  No open orders found for {ticker}")
+            return
+        for o in orders:
             try:
                 _delete(f"/orders/{o['id']}")
-                log.info(f"  Cancelled order {o['id']} for {ticker}")
+                log.info(f"  Cancelled {o.get('type','?')} order {o['id']} for {ticker}")
             except Exception as e:
-                log.warning(f"  Could not cancel order {o['id']}: {e}")
+                log.warning(f"  Could not cancel order {o['id']} for {ticker}: {e}")
+    except Exception as e:
+        log.warning(f"  Could not fetch orders for {ticker}: {e}")
 
 
-def _existing_stop_price(ticker: str, open_orders: list[dict]) -> float | None:
-    for o in open_orders:
-        if o.get("symbol") == ticker and o.get("side") == "sell" and o.get("type") in ("stop", "stop_limit"):
-            sp = o.get("stop_price")
-            if sp:
-                return float(sp)
+def _existing_stop_price(ticker: str) -> float | None:
+    """Fetch the current open stop price for a ticker directly from Alpaca."""
+    try:
+        orders = _get("/orders", {"status": "open", "symbols": ticker, "limit": 100})
+        for o in orders:
+            if o.get("side") == "sell" and o.get("type") in ("stop", "stop_limit"):
+                sp = o.get("stop_price")
+                if sp:
+                    return float(sp)
+    except Exception:
+        pass
     return None
 
 
 def _execute_decisions(decisions_response: dict, account: dict,
-                       positions: list, open_orders: list, db) -> None:
+                       positions: list, db) -> None:
     portfolio_value = float(account["portfolio_value"])
     max_deployable  = portfolio_value * (1 - MIN_CASH_RESERVE)
     pos_map         = {p["symbol"]: p for p in positions}
     decisions       = decisions_response.get("decisions", [])
-
-    # Re-fetch open orders — exit_manager may have placed GTC stops
-    # during the ~30s Claude API call, making the earlier list stale
-    try:
-        open_orders = _get_open_orders()
-        log.info(f"  Refreshed open orders: {len(open_orders)} found")
-    except Exception as e:
-        log.warning(f"  Could not refresh open orders: {e} — using stale list")
 
     log.info(f"Market assessment: {decisions_response.get('market_assessment', '')}")
     log.info(f"Portfolio notes: {decisions_response.get('portfolio_notes', '')}")
@@ -362,7 +366,7 @@ def _execute_decisions(decisions_response: dict, account: dict,
                     log.warning(f"  SKIP sell {ticker} — not in positions")
                     continue
                 qty = int(float(pos["qty"]))
-                _cancel_orders_for_ticker(ticker, open_orders)
+                _cancel_all_orders_for_ticker(ticker)
                 _place_order(ticker, qty, "sell")
                 log.info(f"  SELL {ticker} {qty} shares — {reason}")
                 _log_trade(db, {
@@ -382,12 +386,12 @@ def _execute_decisions(decisions_response: dict, account: dict,
                 remaining = total_qty - trim_qty
 
                 # Preserve existing stop price before cancelling
-                stop_price = _existing_stop_price(ticker, open_orders)
+                stop_price = _existing_stop_price(ticker)
                 if stop_price is None:
                     current_price = _get_latest_price(ticker) or float(pos["current_price"])
                     stop_price = calc_atr_stop(ticker, current_price)
 
-                _cancel_orders_for_ticker(ticker, open_orders)
+                _cancel_all_orders_for_ticker(ticker)
                 _place_order(ticker, trim_qty, "sell")
                 log.info(f"  TRIM {ticker} {trim_qty} shares ({d.get('trim_pct', 50):.0f}%) — {reason}")
 
@@ -474,7 +478,7 @@ def run_claude_trader() -> None:
         return
 
     log.info(f"Claude returned {len(response.get('decisions', []))} decisions")
-    _execute_decisions(response, account, positions, open_orders, db)
+    _execute_decisions(response, account, positions, db)
     log.info("Claude trader complete.")
 
 
