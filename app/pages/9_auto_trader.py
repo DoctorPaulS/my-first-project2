@@ -216,7 +216,7 @@ if view == "Invested positions only":
     _add_invested(m_ret,  "👤 You",        "#4FC3F7")
     _add_invested(a_ret,  "🤖 Algorithm",  "#81C784")
     _add_invested(cl_ret, "🧠 Claude",     "#FFB74D")
-    fig.update_layout(yaxis=dict(title="Return on invested capital (%)", tickformat="+.1f", ticksuffix="%"))
+    fig.update_layout(yaxis=dict(title="Return on invested capital (%)", tickformat="+.1f", ticksuffix="%", dtick=0.5))
 
 else:
     manual_hist = _fetch_history(_manual_headers(), alp_period, alp_timeframe)
@@ -240,7 +240,7 @@ else:
     _add_total(manual_hist, "👤 You",       "#4FC3F7")
     _add_total(auto_hist,   "🤖 Algorithm", "#81C784")
     _add_total(claude_hist, "🧠 Claude",    "#FFB74D")
-    fig.update_layout(yaxis=dict(title="Total account return (%)", tickformat="+.1f", ticksuffix="%"))
+    fig.update_layout(yaxis=dict(title="Total account return (%)", tickformat="+.1f", ticksuffix="%", dtick=0.5))
 
 fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.4)
 fig.update_layout(
