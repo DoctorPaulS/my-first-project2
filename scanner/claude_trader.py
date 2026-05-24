@@ -313,48 +313,84 @@ Respond with your JSON decisions."""
     return json.loads(raw)
 
 
-def _cancel_all_orders_for_ticker(ticker: str, max_wait: int = 10) -> bool:
-    """Cancel all open orders for a ticker, then poll until cleared.
-    Returns True if all orders are gone, False if still stuck after max_wait seconds."""
-    try:
-        orders = _get("/orders", {"status": "open", "symbols": ticker, "limit": 100})
-        if not orders:
-            return True
-        for o in orders:
+def _cancel_all_orders_for_ticker(ticker: str, orders_by_ticker: dict,
+                                   max_wait: int = 5) -> bool:
+    """Cancel all open orders for a ticker using a pre-fetched by-ticker dict.
+    Polls by specific order ID (avoids Alpaca paper API's broken symbols filter).
+    Returns True if all orders are cleared, False if still stuck after max_wait seconds."""
+    ticker_orders = orders_by_ticker.get(ticker, [])
+    if not ticker_orders:
+        return True
+
+    pending_ids = []
+    for o in ticker_orders:
+        oid = o["id"]
+        try:
+            _delete(f"/orders/{oid}")
+            log.info(f"  Cancelled {o.get('type','?')} order {oid} for {ticker}")
+            pending_ids.append(oid)
+        except Exception as e:
+            if "pending cancel" in str(e).lower():
+                log.info(f"  Order {oid} for {ticker} already pending cancel — waiting")
+                pending_ids.append(oid)
+            else:
+                log.warning(f"  Could not cancel order {oid} for {ticker}: {e}")
+
+    if not pending_ids:
+        return True
+
+    # Poll each order ID directly — no broken symbols filter needed
+    TERMINAL = {"cancelled", "filled", "expired", "done_for_day"}
+    for i in range(max_wait):
+        time.sleep(1.0)
+        still_open = []
+        for oid in pending_ids:
             try:
-                _delete(f"/orders/{o['id']}")
-                log.info(f"  Cancelled {o.get('type','?')} order {o['id']} for {ticker}")
-            except Exception as e:
-                if "pending cancel" in str(e).lower():
-                    log.info(f"  Order {o['id']} for {ticker} already pending cancel — waiting")
-                else:
-                    log.warning(f"  Could not cancel order {o['id']} for {ticker}: {e}")
-        # Poll until Alpaca finishes processing the cancellations
-        for i in range(max_wait):
-            time.sleep(1.0)
-            remaining = _get("/orders", {"status": "open", "symbols": ticker, "limit": 100})
-            if not remaining:
-                return True
-            log.info(f"  [{i+1}/{max_wait}] Waiting for {ticker} orders to clear...")
-        log.warning(f"  Orders for {ticker} still held after {max_wait}s — skipping")
-        return False
-    except Exception as e:
-        log.warning(f"  Could not process orders for {ticker}: {e}")
-        return False
+                o = _get(f"/orders/{oid}")
+                if o.get("status") not in TERMINAL:
+                    still_open.append(oid)
+            except Exception:
+                pass  # 404 = order is gone, treat as cleared
+        if not still_open:
+            return True
+        pending_ids = still_open
+        log.info(f"  [{i+1}/{max_wait}] Waiting for {ticker} orders to clear ({len(still_open)} remaining)...")
+
+    log.warning(f"  Orders for {ticker} still held after {max_wait}s — skipping")
+    return False
 
 
-def _existing_stop_price(ticker: str) -> float | None:
-    """Fetch the current open stop price for a ticker directly from Alpaca."""
-    try:
-        orders = _get("/orders", {"status": "open", "symbols": ticker, "limit": 100})
-        for o in orders:
-            if o.get("side") == "sell" and o.get("type") in ("stop", "stop_limit"):
-                sp = o.get("stop_price")
-                if sp:
-                    return float(sp)
-    except Exception:
-        pass
+def _existing_stop_price(ticker: str, orders_by_ticker: dict) -> float | None:
+    """Return the open stop price for a ticker from a pre-fetched by-ticker dict."""
+    for o in orders_by_ticker.get(ticker, []):
+        if o.get("side") == "sell" and o.get("type") in ("stop", "stop_limit"):
+            sp = o.get("stop_price")
+            if sp:
+                return float(sp)
     return None
+
+
+def _parse_related_orders(err_str: str) -> list:
+    """Extract related_orders IDs from an Alpaca 403 error string."""
+    try:
+        json_part = err_str.split(":", 1)[1].strip()
+        return json.loads(json_part).get("related_orders", [])
+    except Exception:
+        return []
+
+
+def _force_close_position(ticker: str, qty: int = None) -> dict:
+    """Use Alpaca's position-close endpoint — bypasses held_for_orders when order cancels are stuck."""
+    params = {"qty": str(qty)} if qty is not None else None
+    r = requests.delete(
+        f"{BASE}/positions/{ticker}",
+        headers=_headers(),
+        params=params,
+        timeout=30,
+    )
+    if not r.ok:
+        raise Exception(f"position-close {r.status_code}: {r.text}")
+    return r.json()
 
 
 def _execute_decisions(decisions_response: dict, account: dict,
@@ -368,6 +404,14 @@ def _execute_decisions(decisions_response: dict, account: dict,
     log.info(f"Portfolio notes: {decisions_response.get('portfolio_notes', '')}")
     log.info(f"Executing {len(decisions)} decisions...")
 
+    # Re-fetch open orders here — Claude's API call takes ~30s, orders change
+    # Use a by-ticker dict; avoid the broken Alpaca paper API symbols filter
+    all_open = _get_open_orders()
+    orders_by_ticker: dict[str, list] = {}
+    for o in all_open:
+        orders_by_ticker.setdefault(o["symbol"], []).append(o)
+    log.info(f"  Open orders snapshot: {len(all_open)} orders across {len(orders_by_ticker)} tickers")
+
     for d in decisions:
         action = d.get("action", "").lower()
         ticker = d.get("ticker", "").upper()
@@ -380,10 +424,20 @@ def _execute_decisions(decisions_response: dict, account: dict,
                     log.warning(f"  SKIP sell {ticker} — not in positions")
                     continue
                 qty = int(float(pos["qty"]))
-                if not _cancel_all_orders_for_ticker(ticker):
-                    continue
-                _place_order(ticker, qty, "sell")
-                log.info(f"  SELL {ticker} {qty} shares — {reason}")
+                _cancel_all_orders_for_ticker(ticker, orders_by_ticker)
+                try:
+                    _place_order(ticker, qty, "sell")
+                    log.info(f"  SELL {ticker} {qty} shares — {reason}")
+                except Exception as sell_err:
+                    related = _parse_related_orders(str(sell_err))
+                    if not related:
+                        raise
+                    log.info(f"  {ticker} sell still blocked ({len(related)} held orders) — using position-close API")
+                    try:
+                        _force_close_position(ticker)
+                        log.info(f"  SELL {ticker} via position-close — {reason}")
+                    except Exception as fc_err:
+                        raise Exception(f"sell failed and position-close also failed: {fc_err}") from sell_err
                 _log_trade(db, {
                     "ticker": ticker, "action": "sell", "qty": qty,
                     "reasoning": reason, "status": "placed",
@@ -401,15 +455,25 @@ def _execute_decisions(decisions_response: dict, account: dict,
                 remaining = total_qty - trim_qty
 
                 # Preserve existing stop price before cancelling
-                stop_price = _existing_stop_price(ticker)
+                stop_price = _existing_stop_price(ticker, orders_by_ticker)
                 if stop_price is None:
                     current_price = _get_latest_price(ticker) or float(pos["current_price"])
                     stop_price = calc_atr_stop(ticker, current_price)
 
-                if not _cancel_all_orders_for_ticker(ticker):
-                    continue
-                _place_order(ticker, trim_qty, "sell")
-                log.info(f"  TRIM {ticker} {trim_qty} shares ({d.get('trim_pct', 50):.0f}%) — {reason}")
+                _cancel_all_orders_for_ticker(ticker, orders_by_ticker)
+                try:
+                    _place_order(ticker, trim_qty, "sell")
+                    log.info(f"  TRIM {ticker} {trim_qty} shares ({d.get('trim_pct', 50):.0f}%) — {reason}")
+                except Exception as trim_err:
+                    related = _parse_related_orders(str(trim_err))
+                    if not related:
+                        raise
+                    log.info(f"  {ticker} trim still blocked ({len(related)} held orders) — using position-close API")
+                    try:
+                        _force_close_position(ticker, qty=trim_qty)
+                        log.info(f"  TRIM {ticker} {trim_qty} shares via position-close — {reason}")
+                    except Exception as fc_err:
+                        raise Exception(f"trim failed and position-close also failed: {fc_err}") from trim_err
 
                 if remaining > 0:
                     _place_gtc_stop(ticker, remaining, stop_price)

@@ -169,8 +169,8 @@ port_for_stats = None
 
 if port_return is not None and len(port_return.dropna()) >= 2:
     port_clean = port_return.dropna()
-    port_norm = 100 + port_clean * 100
-    port_for_stats = port_norm
+    port_for_stats = 100 + port_clean * 100  # base-100 kept for stats
+    port_norm = port_clean * 100             # percent for chart
     fig.add_trace(go.Scatter(
         x=_to_et(port_norm).index, y=port_norm,
         name="My Positions",
@@ -186,7 +186,7 @@ if not spy.empty:
     spy.index = spy_idx
     spy_plot = spy[spy_idx >= bench_start] if bench_start else spy
     if not spy_plot.empty:
-        spy_norm = spy_plot / spy_plot.iloc[0] * 100
+        spy_norm = (spy_plot / spy_plot.iloc[0] - 1) * 100
         fig.add_trace(go.Scatter(x=_to_et(spy_norm).index, y=spy_norm, name="SPY (S&P 500)",
                                  line=dict(color="#4A90D9", width=2, dash="dash")))
 
@@ -195,13 +195,13 @@ if not vti.empty:
     vti.index = vti_idx
     vti_plot = vti[vti_idx >= bench_start] if bench_start else vti
     if not vti_plot.empty:
-        vti_norm = vti_plot / vti_plot.iloc[0] * 100
+        vti_norm = (vti_plot / vti_plot.iloc[0] - 1) * 100
         fig.add_trace(go.Scatter(x=_to_et(vti_norm).index, y=vti_norm, name="VTI (Total Market)",
                                  line=dict(color="#F5A623", width=2, dash="dot")))
 
-fig.add_hline(y=100, line_dash="dash", line_color="gray", opacity=0.4)
+fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.4)
 fig.update_layout(
-    yaxis_title="Growth (base = 100 at entry)",
+    yaxis=dict(title="Return (%)", tickformat="+.1f", ticksuffix="%"),
     height=450,
     legend=dict(orientation="h", yanchor="bottom", y=1.02),
     margin=dict(l=0, r=0, t=30, b=0),
