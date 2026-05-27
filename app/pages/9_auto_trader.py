@@ -21,6 +21,7 @@ YF_PERIOD_MAP   = {"1D": "1d",  "1W": "5d",  "1M": "1mo", "3M": "3mo", "6M": "6m
 YF_INTERVAL_MAP = {"1D": "15m", "1W": "1h",  "1M": "1d",  "3M": "1d",  "6M": "1d",  "1Y": "1d"}
 ALP_PERIOD_MAP  = {"1D": ("1D", "15Min"), "1W": ("1W", "1D"), "1M": ("1M", "1D"),
                    "3M": ("3M", "1D"),    "6M": ("6M", "1D"), "1Y": ("1A", "1D")}
+DTICK_MAP       = {"1D": 0.1,  "1W": 0.25, "1M": 0.5,   "3M": 1.0,   "6M": 1.0,   "1Y": 2.0}
 
 
 def _manual_headers() -> dict:
@@ -191,6 +192,7 @@ view         = c2.radio("View", ["Invested positions only", "Total account (incl
 yf_period   = YF_PERIOD_MAP[period_label]
 yf_interval = YF_INTERVAL_MAP[period_label]
 alp_period, alp_timeframe = ALP_PERIOD_MAP[period_label]
+dtick       = DTICK_MAP[period_label]
 
 def _to_et(s: pd.Series) -> pd.Series:
     idx = pd.DatetimeIndex(s.index)
@@ -235,7 +237,7 @@ if view == "Invested positions only":
     _add_invested(cl_ret, "🧠 Claude",     "#FFB74D")
     _add_benchmark("SPY", "SPY (S&P 500)",    "#4A90D9")
     _add_benchmark("VTI", "VTI (Total Mkt)",  "#F5A623")
-    fig.update_layout(yaxis=dict(title="Return on invested capital (%)", tickformat="+.1f", ticksuffix="%", dtick=0.5))
+    fig.update_layout(yaxis=dict(title="Return on invested capital (%)", tickformat="+.1f", ticksuffix="%", dtick=dtick))
 
 else:
     manual_hist = _fetch_history(_manual_headers(), alp_period, alp_timeframe)
@@ -261,7 +263,7 @@ else:
     _add_total(claude_hist, "🧠 Claude",    "#FFB74D")
     _add_benchmark("SPY", "SPY (S&P 500)",   "#4A90D9")
     _add_benchmark("VTI", "VTI (Total Mkt)", "#F5A623")
-    fig.update_layout(yaxis=dict(title="Total account return (%)", tickformat="+.1f", ticksuffix="%", dtick=0.5))
+    fig.update_layout(yaxis=dict(title="Total account return (%)", tickformat="+.1f", ticksuffix="%", dtick=dtick))
 
 fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.4)
 fig.update_layout(
