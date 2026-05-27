@@ -237,7 +237,7 @@ if view == "Invested positions only":
     _add_invested(cl_ret, "🧠 Claude",     "#FFB74D")
     _add_benchmark("SPY", "SPY (S&P 500)",    "#4A90D9")
     _add_benchmark("VTI", "VTI (Total Mkt)",  "#F5A623")
-    fig.update_layout(yaxis=dict(title="Return on invested capital (%)", tickformat="+.1f", ticksuffix="%", dtick=dtick))
+    fig.update_layout(yaxis=dict(title="Return on invested capital (%)", tickformat="+.2f", ticksuffix="%", dtick=dtick))
 
 else:
     manual_hist = _fetch_history(_manual_headers(), alp_period, alp_timeframe)
@@ -263,7 +263,7 @@ else:
     _add_total(claude_hist, "🧠 Claude",    "#FFB74D")
     _add_benchmark("SPY", "SPY (S&P 500)",   "#4A90D9")
     _add_benchmark("VTI", "VTI (Total Mkt)", "#F5A623")
-    fig.update_layout(yaxis=dict(title="Total account return (%)", tickformat="+.1f", ticksuffix="%", dtick=dtick))
+    fig.update_layout(yaxis=dict(title="Total account return (%)", tickformat="+.2f", ticksuffix="%", dtick=dtick))
 
 fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.4)
 fig.update_layout(
