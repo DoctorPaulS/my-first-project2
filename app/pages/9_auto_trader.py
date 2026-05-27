@@ -201,6 +201,23 @@ def _to_et(s: pd.Series) -> pd.Series:
 
 fig = go.Figure()
 
+def _add_benchmark(ticker: str, name: str, color: str) -> None:
+    try:
+        data = yf.download(ticker, period=yf_period, interval=yf_interval,
+                           auto_adjust=True, progress=False)["Close"].squeeze()
+        if data.empty or len(data) < 2:
+            return
+        idx = data.index.tz_localize(None) if data.index.tz else data.index
+        data.index = idx
+        pct = (data / data.iloc[0] - 1) * 100
+        fig.add_trace(go.Scatter(
+            x=_to_et(pct).index, y=pct,
+            name=name, line=dict(color=color, width=1.5, dash="dash"),
+        ))
+    except Exception:
+        pass
+
+
 if view == "Invested positions only":
     with st.spinner("Loading position performance..."):
         m_ret  = _invested_performance(_manual_headers(), yf_period, yf_interval)
@@ -216,6 +233,8 @@ if view == "Invested positions only":
     _add_invested(m_ret,  "👤 You",        "#4FC3F7")
     _add_invested(a_ret,  "🤖 Algorithm",  "#81C784")
     _add_invested(cl_ret, "🧠 Claude",     "#FFB74D")
+    _add_benchmark("SPY", "SPY (S&P 500)",    "#4A90D9")
+    _add_benchmark("VTI", "VTI (Total Mkt)",  "#F5A623")
     fig.update_layout(yaxis=dict(title="Return on invested capital (%)", tickformat="+.1f", ticksuffix="%", dtick=0.5))
 
 else:
@@ -240,6 +259,8 @@ else:
     _add_total(manual_hist, "👤 You",       "#4FC3F7")
     _add_total(auto_hist,   "🤖 Algorithm", "#81C784")
     _add_total(claude_hist, "🧠 Claude",    "#FFB74D")
+    _add_benchmark("SPY", "SPY (S&P 500)",   "#4A90D9")
+    _add_benchmark("VTI", "VTI (Total Mkt)", "#F5A623")
     fig.update_layout(yaxis=dict(title="Total account return (%)", tickformat="+.1f", ticksuffix="%", dtick=0.5))
 
 fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.4)
