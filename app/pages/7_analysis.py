@@ -268,9 +268,10 @@ if indicator_rows:
     )
     corr.columns = ["Indicator", "Correlation"]
     corr["Abs"] = corr["Correlation"].abs()
-    corr = corr.sort_values("Abs", ascending=False).drop(columns="Abs")
+    corr = corr.sort_values("Abs", ascending=False)
     corr["Direction"] = corr["Correlation"].apply(lambda x: "✅ Predictive" if x > 0.05 else ("⚠️ Weak" if x > -0.05 else "❌ Inverse"))
     corr["Correlation"] = corr["Correlation"].apply(lambda x: f"{x:+.3f}")
+    corr["Abs"] = corr["Abs"].apply(lambda x: f"{x:.3f}")
 
     st.dataframe(corr, use_container_width=True, hide_index=True)
 else:
