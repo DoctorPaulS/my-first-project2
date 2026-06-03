@@ -1,10 +1,7 @@
 name: Daily Auto Trader
 
 on:
-  schedule:
-    # Every weekday at 9:35am ET (13:35 UTC) — 5 min after market open
-    - cron: "35 13 * * 1-5"
-  workflow_dispatch:  # Allow manual runs from GitHub Actions UI
+  workflow_dispatch:  # Triggered by cron-job.org at 8:35am CT weekdays
 
 jobs:
   auto-trade:

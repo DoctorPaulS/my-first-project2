@@ -1,12 +1,7 @@
 name: Claude Autonomous Trader
 
 on:
-  schedule:
-    # 9:35am ET (13:35 UTC) — 5 min after market open
-    - cron: "35 13 * * 1-5"
-    # 1:00pm ET (17:00 UTC) — midday reassessment
-    - cron: "0 17 * * 1-5"
-  workflow_dispatch:
+  workflow_dispatch:  # Triggered by cron-job.org at 8:35am and 1:00pm CT weekdays
 
 jobs:
   claude-trade:
