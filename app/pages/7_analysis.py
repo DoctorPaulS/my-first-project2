@@ -104,7 +104,7 @@ records = []
 for _, row in df.iterrows():
     ticker = row["ticker"]
     scan_date = pd.Timestamp(row["scan_date"])
-    fwd_date = scan_date + pd.offsets.BDay(FORWARD_DAYS)
+    fwd_date = scan_date + pd.Timedelta(days=FORWARD_DAYS)
 
     if ticker not in prices.columns:
         continue
