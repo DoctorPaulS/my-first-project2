@@ -109,6 +109,15 @@ def _cancel_open_orders(ticker: str, open_orders: dict, headers: dict) -> None:
             log.warning(f"    Could not cancel order {o['id']}: {e}")
 
 
+def _cancel_stop_orders(ticker: str, open_orders: dict, headers: dict) -> None:
+    for o in open_orders.get(ticker, []):
+        if o.get("side") == "sell" and o.get("type") in ("stop", "stop_limit"):
+            try:
+                _delete(f"/orders/{o['id']}", headers)
+            except Exception as e:
+                log.warning(f"    Could not cancel stop {o['id']}: {e}")
+
+
 def _place_gtc_stop(ticker: str, qty: int, stop_price: float, headers: dict) -> dict:
     return _post("/orders", headers, {
         "symbol":        ticker,
@@ -303,16 +312,27 @@ def _run_for_account(account_name: str, headers: dict, db,
                         log.error(f"  [{account_name}] {ticker} size trim failed: {e}")
                     continue
 
-        # ── 4. Ensure GTC stop exists ─────────────────────────────────────
-        if _has_active_stop(ticker, open_orders):
-            log.info(f"  [{account_name}] {ticker} stop OK")
-        else:
-            log.info(f"  [{account_name}] {ticker} no active stop → placing GTC stop at ${stop:.2f}")
+        # ── 4. Trailing stop ratchet / ensure GTC stop exists ────────────
+        existing_stop = _get_existing_stop_price(ticker, open_orders)
+        new_stop      = calc_atr_stop(ticker, current_price)
+
+        if existing_stop is None:
+            log.info(f"  [{account_name}] {ticker} no active stop → placing GTC stop at ${new_stop:.2f}")
             try:
-                _place_gtc_stop(ticker, int(qty), stop, headers)
-                log.info(f"  [{account_name}] {ticker} GTC stop placed at ${stop:.2f}")
+                _place_gtc_stop(ticker, int(qty), new_stop, headers)
+                log.info(f"  [{account_name}] {ticker} GTC stop placed at ${new_stop:.2f}")
             except Exception as e:
                 log.error(f"  [{account_name}] {ticker} stop placement failed: {e}")
+        elif new_stop > existing_stop * 1.01:
+            log.info(f"  [{account_name}] {ticker} trailing stop ${existing_stop:.2f} → ${new_stop:.2f}")
+            try:
+                _cancel_stop_orders(ticker, open_orders, headers)
+                _place_gtc_stop(ticker, int(qty), new_stop, headers)
+                log.info(f"  [{account_name}] {ticker} stop ratcheted")
+            except Exception as e:
+                log.error(f"  [{account_name}] {ticker} stop ratchet failed: {e}")
+        else:
+            log.info(f"  [{account_name}] {ticker} stop OK at ${existing_stop:.2f}")
 
 
 def run_exit_manager() -> None:
